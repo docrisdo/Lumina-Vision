@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Lumina Vision
 
 Proyecto listo para GitHub y para clonar en Raspberry Pi 4 con:
@@ -155,3 +156,6 @@ Antes revisa que la ruta del usuario `pi` coincida con tu Raspberry.
 
 En Windows el sistema hace fallback a `cv2.VideoCapture` porque `Picamera2` no esta disponible.
 Eso te permite desarrollar la estructura del proyecto en VS Code, pero la prueba real de camara debe hacerse en la Raspberry.
+=======
+# Lumina-Vision
+>>>>>>> d140e64cc6d1cdf91b4c995cf8c7fd72318bf6bd
