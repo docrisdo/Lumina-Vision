@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
+import threading
 
 import cv2
 from loguru import logger
@@ -26,6 +27,9 @@ class LuminaPipeline:
         self._frame_index = 0
         self._last_ocr_text = ""
         self._last_object_signature = ""
+        self._latest_ocr_text = ""
+        self._ocr_lock = threading.Lock()
+        self._ocr_worker: threading.Thread | None = None
 
     def run(self) -> int:
         self.camera.start()
@@ -56,12 +60,10 @@ class LuminaPipeline:
                 if detection_ready and self._frame_index % self.config.detection_run_every_n_frames == 0:
                     detections = self.detector.detect(frame)
 
-                if self.config.enable_ocr and self._should_run_ocr():
-                    self.camera.refocus()
-                    result = self.ocr.extract_text(frame)
-                    self._last_ocr_at = now_monotonic()
-                    if result is not None:
-                        ocr_text = result.text
+                if self.config.enable_ocr:
+                    self._maybe_start_ocr(frame)
+                    with self._ocr_lock:
+                        ocr_text = self._latest_ocr_text
 
                 annotated = self._annotate_frame(frame, detections, ocr_text)
                 self._handle_speech(detections, ocr_text)
@@ -71,7 +73,7 @@ class LuminaPipeline:
                     cv2.imwrite(str(file_path), annotated)
 
                 if self.config.show_preview:
-                    cv2.imshow("Lumina Vision", annotated)
+                    cv2.imshow("Lumina Vision", self._resize_preview(annotated))
                     key = cv2.waitKey(1) & 0xFF
                     if key in (27, ord("q")):
                         break
@@ -85,6 +87,39 @@ class LuminaPipeline:
 
     def _should_run_ocr(self) -> bool:
         return (now_monotonic() - self._last_ocr_at) >= self.config.ocr_run_interval_seconds
+
+    def _maybe_start_ocr(self, frame) -> None:
+        if not self._should_run_ocr():
+            return
+        if self._ocr_worker is not None and self._ocr_worker.is_alive():
+            return
+
+        frame_copy = frame.copy()
+        self._last_ocr_at = now_monotonic()
+        self._ocr_worker = threading.Thread(
+            target=self._run_ocr_job,
+            args=(frame_copy,),
+            name="lumina-ocr",
+            daemon=True,
+        )
+        self._ocr_worker.start()
+
+    def _run_ocr_job(self, frame) -> None:
+        self.camera.refocus()
+        result = self.ocr.extract_text(frame)
+        with self._ocr_lock:
+            self._latest_ocr_text = result.text if result is not None else ""
+
+    def _resize_preview(self, frame):
+        height, width = frame.shape[:2]
+        if width <= self.config.preview_max_width:
+            return frame
+        scale = self.config.preview_max_width / float(width)
+        return cv2.resize(
+            frame,
+            (int(width * scale), int(height * scale)),
+            interpolation=cv2.INTER_AREA,
+        )
 
     def _handle_speech(self, detections: list[Detection], ocr_text: str) -> None:
         if not self.config.enable_tts or not self._speech_gate.ready():

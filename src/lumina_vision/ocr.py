@@ -20,6 +20,13 @@ class OCRService:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
+    def _limit_width(self, frame: np.ndarray) -> np.ndarray:
+        height, width = frame.shape[:2]
+        if width <= self.config.ocr_max_width:
+            return frame
+        scale = self.config.ocr_max_width / float(width)
+        return cv2.resize(frame, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
+
     def _center_crop(self, frame: np.ndarray) -> np.ndarray:
         height, width = frame.shape[:2]
         x1 = int(width * 0.15)
@@ -52,6 +59,7 @@ class OCRService:
 
     def extract_text(self, frame: np.ndarray) -> OCRResult | None:
         candidates: list[str] = []
+        frame = self._limit_width(frame)
 
         for region in (frame, self._center_crop(frame)):
             for variant in self._preprocess_variants(region):

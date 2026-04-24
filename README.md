@@ -145,6 +145,15 @@ Variables clave del `.env`:
 - `LUMINA_DETECTION_RUN_EVERY_N_FRAMES=2`
 - `LUMINA_OCR_RUN_INTERVAL_SECONDS=2.0`
 
+Si en Raspberry sientes el sistema trabado, ajusta primero esto:
+
+```env
+LUMINA_DETECTION_RUN_EVERY_N_FRAMES=4
+LUMINA_OCR_RUN_INTERVAL_SECONDS=3.0
+LUMINA_OCR_MAX_WIDTH=960
+LUMINA_PREVIEW_MAX_WIDTH=960
+```
+
 Si los colores de la camara se ven alterados, prueba cambiando:
 
 ```env
