@@ -14,9 +14,12 @@ try:
     from tflite_runtime.interpreter import Interpreter
 except ImportError:
     try:
-        from tensorflow.lite import Interpreter  # type: ignore
+        from ai_edge_litert.interpreter import Interpreter  # type: ignore
     except ImportError:
-        Interpreter = None
+        try:
+            from tensorflow.lite import Interpreter  # type: ignore
+        except ImportError:
+            Interpreter = None
 
 
 LABEL_TRANSLATIONS = {
@@ -138,7 +141,7 @@ class ObjectDetector:
     def load(self) -> None:
         if Interpreter is None:
             raise RuntimeError(
-                "No hay runtime de TensorFlow Lite. Instala tflite_runtime o tensorflow.",
+                "No hay runtime de TensorFlow Lite. Instala tflite_runtime, ai-edge-litert o tensorflow.",
             )
         if not self.config.detection_model_path.exists():
             raise FileNotFoundError(

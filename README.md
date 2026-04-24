@@ -120,6 +120,17 @@ El script `scripts/bootstrap_pi.sh` instala:
 - `libespeak1`
 - `ffmpeg`
 
+## Nota sobre Debian 13 / Python 3.13
+
+Si tu Raspberry usa Debian 13 (`trixie`) con Python 3.13, es posible que
+`tflite-runtime` no tenga wheel disponible para tu entorno. En ese caso instala:
+
+```bash
+pip install ai-edge-litert
+```
+
+El proyecto ya esta preparado para usar este runtime automaticamente.
+
 ## Configuracion importante
 
 Variables clave del `.env`:
