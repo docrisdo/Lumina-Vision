@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    return int(raw_value) if raw_value is not None else default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    return float(raw_value) if raw_value is not None else default
+
+
+def _env_str(name: str, default: str) -> str:
+    return os.getenv(name, default).strip()
+
+
+@dataclass(slots=True)
+class AppConfig:
+    camera_width: int
+    camera_height: int
+    camera_hflip: bool
+    camera_vflip: bool
+    camera_af_mode: str
+    enable_object_detection: bool
+    enable_ocr: bool
+    enable_tts: bool
+    show_preview: bool
+    save_debug_frames: bool
+    detection_model_path: Path
+    labels_path: Path
+    detection_score_threshold: float
+    detection_max_results: int
+    detection_run_every_n_frames: int
+    ocr_language: str
+    ocr_run_interval_seconds: float
+    ocr_min_text_length: int
+    tts_engine: str
+    speech_rate: int
+    speech_volume: float
+    speech_cooldown_seconds: float
+    speech_enable_objects: bool
+    speech_enable_ocr: bool
+    log_level: str
+
+    @classmethod
+    def load(cls) -> "AppConfig":
+        load_dotenv()
+        return cls(
+            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1280),
+            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 720),
+            camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
+            camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
+            camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
+            enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
+            enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
+            enable_tts=_env_bool("LUMINA_ENABLE_TTS", True),
+            show_preview=_env_bool("LUMINA_SHOW_PREVIEW", True),
+            save_debug_frames=_env_bool("LUMINA_SAVE_DEBUG_FRAMES", False),
+            detection_model_path=Path(
+                _env_str(
+                    "LUMINA_DETECTION_MODEL_PATH",
+                    "models/efficientdet_lite0.tflite",
+                ),
+            ),
+            labels_path=Path(_env_str("LUMINA_LABELS_PATH", "models/coco_labels.txt")),
+            detection_score_threshold=_env_float("LUMINA_DETECTION_SCORE_THRESHOLD", 0.55),
+            detection_max_results=_env_int("LUMINA_DETECTION_MAX_RESULTS", 5),
+            detection_run_every_n_frames=max(
+                1,
+                _env_int("LUMINA_DETECTION_RUN_EVERY_N_FRAMES", 2),
+            ),
+            ocr_language=_env_str("LUMINA_OCR_LANGUAGE", "spa+eng"),
+            ocr_run_interval_seconds=max(
+                0.2,
+                _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 2.0),
+            ),
+            ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
+            tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
+            speech_rate=_env_int("LUMINA_SPEECH_RATE", 170),
+            speech_volume=_env_float("LUMINA_SPEECH_VOLUME", 1.0),
+            speech_cooldown_seconds=max(
+                0.5,
+                _env_float("LUMINA_SPEECH_COOLDOWN_SECONDS", 4.0),
+            ),
+            speech_enable_objects=_env_bool("LUMINA_SPEECH_ENABLE_OBJECTS", True),
+            speech_enable_ocr=_env_bool("LUMINA_SPEECH_ENABLE_OCR", True),
+            log_level=_env_str("LUMINA_LOG_LEVEL", "INFO"),
+        )

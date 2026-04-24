@@ -1,0 +1,14 @@
+[Unit]
+Description=Lumina Vision
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Lumina-Vision
+ExecStart=/bin/bash /home/pi/Lumina-Vision/scripts/run_pi.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
