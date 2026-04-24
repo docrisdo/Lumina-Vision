@@ -36,6 +36,8 @@ class AppConfig:
     camera_vflip: bool
     camera_af_mode: str
     camera_color_mode: str
+    camera_refocus_before_ocr: bool
+    camera_focus_settle_seconds: float
     enable_object_detection: bool
     enable_ocr: bool
     enable_tts: bool
@@ -67,6 +69,11 @@ class AppConfig:
             camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
             camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "rgb_to_bgr"),
+            camera_refocus_before_ocr=_env_bool("LUMINA_CAMERA_REFOCUS_BEFORE_OCR", True),
+            camera_focus_settle_seconds=max(
+                0.0,
+                _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.2),
+            ),
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
             enable_tts=_env_bool("LUMINA_ENABLE_TTS", True),

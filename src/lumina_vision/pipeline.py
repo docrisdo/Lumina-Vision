@@ -25,6 +25,7 @@ class LuminaPipeline:
         self._last_ocr_at = 0.0
         self._frame_index = 0
         self._last_ocr_text = ""
+        self._last_object_signature = ""
 
     def run(self) -> int:
         self.camera.start()
@@ -56,6 +57,7 @@ class LuminaPipeline:
                     detections = self.detector.detect(frame)
 
                 if self.config.enable_ocr and self._should_run_ocr():
+                    self.camera.refocus()
                     result = self.ocr.extract_text(frame)
                     self._last_ocr_at = now_monotonic()
                     if result is not None:
@@ -97,11 +99,18 @@ class LuminaPipeline:
         if self.config.speech_enable_objects and detections:
             labels = [d.label for d in detections]
             counter = Counter(labels)
+            signature = "|".join(
+                f"{label}:{count}"
+                for label, count in counter.most_common(3)
+            )
+            if signature == self._last_object_signature:
+                return
             message = ", ".join(
                 f"{count} {label}" if count > 1 else f"un {label}"
                 for label, count in counter.most_common(3)
             )
             self.speech.speak(f"Objetos detectados: {message}")
+            self._last_object_signature = signature
             self._speech_gate.mark()
 
     def _annotate_frame(self, frame, detections: list[Detection], ocr_text: str):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Any
 
 import cv2
@@ -57,6 +58,7 @@ class CameraManager:
         self._camera.start()
         self._backend = "picamera2"
         logger.info("Camara iniciada con Picamera2.")
+        self.refocus()
 
     def _start_opencv(self) -> None:
         capture = cv2.VideoCapture(0)
@@ -87,6 +89,26 @@ class CameraManager:
         if not ok:
             raise RuntimeError("No se pudo leer un frame de la camara.")
         return frame
+
+    def refocus(self) -> None:
+        if self._backend != "picamera2" or self._camera is None:
+            return
+        if not self.config.camera_refocus_before_ocr:
+            return
+
+        af_mode = self.config.camera_af_mode.lower()
+        if af_mode not in {"auto", "continuous"}:
+            return
+
+        try:
+            if af_mode == "auto":
+                self._camera.set_controls({"AfMode": 1, "AfTrigger": 0})
+            else:
+                self._camera.set_controls({"AfMode": 2})
+            if self.config.camera_focus_settle_seconds > 0:
+                time.sleep(self.config.camera_focus_settle_seconds)
+        except Exception as exc:
+            logger.debug("No se pudo reenfocar la camara: {}", exc)
 
     def stop(self) -> None:
         if self._camera is None:
