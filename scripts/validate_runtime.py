@@ -34,6 +34,9 @@ def main() -> int:
     if config.enable_tts and shutil.which("espeak-ng") is None:
         warnings.append("espeak-ng no esta en PATH. Se intentara usar pyttsx3.")
 
+    if config.tts_output.lower() == "aplay" and shutil.which("aplay") is None:
+        warnings.append("LUMINA_TTS_OUTPUT=aplay pero aplay no esta instalado.")
+
     if config.show_preview and os.environ.get("DISPLAY") is None:
         warnings.append(
             "LUMINA_SHOW_PREVIEW=true pero no hay DISPLAY. Considera usar false en modo headless.",

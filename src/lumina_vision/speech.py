@@ -50,6 +50,9 @@ class SpeechEngine:
         self._thread.start()
         logger.info("Motor TTS iniciado con {}.", self._engine_name)
 
+        if self.config.tts_startup_test:
+            self.speak("Sistema de voz listo.")
+
     def _configure_spanish_voice(self) -> None:
         if self._pyttsx3_engine is None:
             return
@@ -75,7 +78,52 @@ class SpeechEngine:
     def speak(self, text: str) -> None:
         if not self._running or not text.strip():
             return
-        self._queue.put(text.strip())
+        clean_text = text.strip()
+        logger.info("Voz en cola: {}", clean_text)
+        self._queue.put(clean_text)
+
+    def _speak_with_espeak(self, text: str) -> None:
+        amplitude = max(0, min(200, int(self.config.speech_volume * 200)))
+        base_cmd = [
+            "espeak-ng",
+            "-v",
+            "es",
+            "-s",
+            str(self.config.speech_rate),
+            "-a",
+            str(amplitude),
+        ]
+
+        if self.config.tts_output.lower() == "aplay" and shutil.which("aplay"):
+            espeak = subprocess.Popen(
+                [*base_cmd, "--stdout", text],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            aplay = subprocess.run(
+                ["aplay", "-q"],
+                stdin=espeak.stdout,
+                capture_output=True,
+                text=False,
+                check=False,
+            )
+            if espeak.stdout is not None:
+                espeak.stdout.close()
+            _, espeak_err = espeak.communicate(timeout=10)
+            if espeak.returncode not in (0, None):
+                logger.warning("espeak-ng fallo: {}", espeak_err.decode(errors="ignore").strip())
+            if aplay.returncode != 0:
+                logger.warning("aplay fallo: {}", aplay.stderr.decode(errors="ignore").strip())
+            return
+
+        result = subprocess.run(
+            [*base_cmd, text],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning("espeak-ng fallo: {}", result.stderr.strip())
 
     def _worker(self) -> None:
         while self._running:
@@ -86,12 +134,7 @@ class SpeechEngine:
 
             try:
                 if self._engine_name == "espeak-ng":
-                    subprocess.run(
-                        ["espeak-ng", "-v", "es", "-s", str(self.config.speech_rate), text],
-                        check=False,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
+                    self._speak_with_espeak(text)
                 elif self._engine_name == "pyttsx3" and self._pyttsx3_engine is not None:
                     self._pyttsx3_engine.say(text)
                     self._pyttsx3_engine.runAndWait()

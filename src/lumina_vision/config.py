@@ -54,6 +54,8 @@ class AppConfig:
     ocr_min_text_length: int
     ocr_max_width: int
     tts_engine: str
+    tts_output: str
+    tts_startup_test: bool
     speech_rate: int
     speech_volume: float
     speech_cooldown_seconds: float
@@ -103,6 +105,8 @@ class AppConfig:
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
             ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 960)),
             tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
+            tts_output=_env_str("LUMINA_TTS_OUTPUT", "aplay"),
+            tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", True),
             speech_rate=_env_int("LUMINA_SPEECH_RATE", 170),
             speech_volume=_env_float("LUMINA_SPEECH_VOLUME", 1.0),
             speech_cooldown_seconds=max(

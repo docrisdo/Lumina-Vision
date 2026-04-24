@@ -109,6 +109,10 @@ class LuminaPipeline:
         result = self.ocr.extract_text(frame)
         with self._ocr_lock:
             self._latest_ocr_text = result.text if result is not None else ""
+        if result is not None:
+            logger.info("OCR detecto texto: {}", result.text[:160])
+        else:
+            logger.debug("OCR no detecto texto util.")
 
     def _resize_preview(self, frame):
         height, width = frame.shape[:2]
@@ -126,6 +130,7 @@ class LuminaPipeline:
             return
 
         if self.config.speech_enable_ocr and ocr_text and ocr_text != self._last_ocr_text:
+            logger.info("Anunciando texto por voz: {}", ocr_text[:160])
             self.speech.speak(f"Texto detectado: {ocr_text}")
             self._last_ocr_text = ocr_text
             self._speech_gate.mark()
@@ -144,6 +149,7 @@ class LuminaPipeline:
                 f"{count} {label}" if count > 1 else f"un {label}"
                 for label, count in counter.most_common(3)
             )
+            logger.info("Anunciando objetos por voz: {}", message)
             self.speech.speak(f"Objetos detectados: {message}")
             self._last_object_signature = signature
             self._speech_gate.mark()
