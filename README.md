@@ -140,8 +140,21 @@ Variables clave del `.env`:
 - `LUMINA_ENABLE_TTS=true`
 - `LUMINA_OCR_LANGUAGE=spa+eng`
 - `LUMINA_SHOW_PREVIEW=false` para modo headless
+- `LUMINA_CAMERA_COLOR_MODE=rgb_to_bgr`
 - `LUMINA_DETECTION_RUN_EVERY_N_FRAMES=2`
 - `LUMINA_OCR_RUN_INTERVAL_SECONDS=2.0`
+
+Si los colores de la camara se ven alterados, prueba cambiando:
+
+```env
+LUMINA_CAMERA_COLOR_MODE=none
+```
+
+o bien:
+
+```env
+LUMINA_CAMERA_COLOR_MODE=bgr_to_rgb
+```
 
 ## Servicio automatico al encender
 

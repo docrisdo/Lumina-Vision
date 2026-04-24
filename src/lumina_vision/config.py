@@ -35,6 +35,7 @@ class AppConfig:
     camera_hflip: bool
     camera_vflip: bool
     camera_af_mode: str
+    camera_color_mode: str
     enable_object_detection: bool
     enable_ocr: bool
     enable_tts: bool
@@ -65,6 +66,7 @@ class AppConfig:
             camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
             camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
+            camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "rgb_to_bgr"),
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
             enable_tts=_env_bool("LUMINA_ENABLE_TTS", True),
