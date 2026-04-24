@@ -39,7 +39,7 @@ class CameraManager:
 
         self._camera = Picamera2()
         camera_config = self._camera.create_preview_configuration(
-            main={"size": (self.config.camera_width, self.config.camera_height), "format": "RGB888"},
+            main={"size": (self.config.camera_width, self.config.camera_height), "format": "BGR888"},
             controls={"FrameRate": 24.0},
         )
         self._camera.configure(camera_config)
@@ -72,7 +72,6 @@ class CameraManager:
     def read(self) -> Any:
         if self._backend == "picamera2":
             frame = self._camera.capture_array()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             if self.config.camera_hflip:
                 frame = cv2.flip(frame, 1)
             if self.config.camera_vflip:
