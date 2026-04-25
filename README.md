@@ -144,7 +144,7 @@ Variables clave del `.env`:
 - `LUMINA_CAMERA_REFOCUS_BEFORE_OCR=true`
 - `LUMINA_DETECTION_RUN_EVERY_N_FRAMES=2`
 - `LUMINA_OCR_RUN_INTERVAL_SECONDS=2.0`
-- `LUMINA_TTS_OUTPUT=aplay`
+- `LUMINA_TTS_OUTPUT=direct`
 
 Para probar solo la voz:
 
@@ -156,6 +156,9 @@ python scripts/test_audio.py
 Si en Raspberry sientes el sistema trabado, ajusta primero esto:
 
 ```env
+LUMINA_CAMERA_WIDTH=960
+LUMINA_CAMERA_HEIGHT=540
+LUMINA_CAMERA_FRAMERATE=15
 LUMINA_DETECTION_RUN_EVERY_N_FRAMES=4
 LUMINA_OCR_RUN_INTERVAL_SECONDS=3.0
 LUMINA_OCR_MAX_WIDTH=960

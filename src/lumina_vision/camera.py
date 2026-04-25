@@ -38,10 +38,18 @@ class CameraManager:
     def _start_picamera2(self) -> None:
         assert Picamera2 is not None
 
+        available_cameras = Picamera2.global_camera_info()
+        if not available_cameras:
+            raise RuntimeError(
+                "Picamera2 no detecto ninguna camara. Cierra otros programas que usen la camara, "
+                "revisa el flex CSI y prueba: rpicam-hello --list-cameras",
+            )
+
         self._camera = Picamera2()
         camera_config = self._camera.create_preview_configuration(
             main={"size": (self.config.camera_width, self.config.camera_height), "format": "RGB888"},
-            controls={"FrameRate": 24.0},
+            buffer_count=4,
+            controls={"FrameRate": self.config.camera_framerate},
         )
         self._camera.configure(camera_config)
 

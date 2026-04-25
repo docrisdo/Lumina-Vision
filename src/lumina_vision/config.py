@@ -38,6 +38,7 @@ class AppConfig:
     camera_color_mode: str
     camera_refocus_before_ocr: bool
     camera_focus_settle_seconds: float
+    camera_framerate: float
     preview_max_width: int
     enable_object_detection: bool
     enable_ocr: bool
@@ -67,8 +68,8 @@ class AppConfig:
     def load(cls) -> "AppConfig":
         load_dotenv()
         return cls(
-            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1280),
-            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 720),
+            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 960),
+            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 540),
             camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
             camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
@@ -78,6 +79,7 @@ class AppConfig:
                 0.0,
                 _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.2),
             ),
+            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 15.0)),
             preview_max_width=max(320, _env_int("LUMINA_PREVIEW_MAX_WIDTH", 960)),
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
@@ -105,7 +107,7 @@ class AppConfig:
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
             ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 960)),
             tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
-            tts_output=_env_str("LUMINA_TTS_OUTPUT", "aplay"),
+            tts_output=_env_str("LUMINA_TTS_OUTPUT", "direct"),
             tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", True),
             speech_rate=_env_int("LUMINA_SPEECH_RATE", 170),
             speech_volume=_env_float("LUMINA_SPEECH_VOLUME", 1.0),
