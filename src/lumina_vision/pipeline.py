@@ -15,6 +15,21 @@ from lumina_vision.speech import SpeechEngine
 from lumina_vision.utils import CooldownGate, now_monotonic
 
 
+SCHOOL_OBJECT_PRIORITY = {
+    "libro",
+    "mochila",
+    "laptop",
+    "celular",
+    "botella",
+    "tijeras",
+    "teclado",
+    "raton",
+    "silla",
+    "mesa",
+    "reloj",
+}
+
+
 class LuminaPipeline:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -137,7 +152,14 @@ class LuminaPipeline:
             return
 
         if self.config.speech_enable_objects and detections:
-            labels = [d.label for d in detections]
+            ordered_detections = sorted(
+                detections,
+                key=lambda detection: (
+                    detection.label not in SCHOOL_OBJECT_PRIORITY,
+                    -detection.score,
+                ),
+            )
+            labels = [d.label for d in ordered_detections]
             counter = Counter(labels)
             signature = "|".join(
                 f"{label}:{count}"

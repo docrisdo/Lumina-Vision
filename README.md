@@ -117,6 +117,8 @@ El script `scripts/bootstrap_pi.sh` instala:
 - `tesseract-ocr`
 - `tesseract-ocr-spa`
 - `espeak-ng`
+- `piper`
+- `pulseaudio-utils`
 - `libespeak1`
 - `ffmpeg`
 
@@ -151,6 +153,19 @@ Para probar solo la voz:
 ```bash
 source .venv/bin/activate
 python scripts/test_audio.py
+```
+
+Para una voz mas natural que `espeak-ng`, instala Piper y descarga una voz:
+
+```bash
+bash scripts/download_piper_spanish_voice.sh
+```
+
+Despues ajusta `.env`:
+
+```env
+LUMINA_TTS_ENGINE=piper
+LUMINA_PIPER_MODEL_PATH=models/tts/es_MX-ald-medium.onnx
 ```
 
 Si en Raspberry sientes el sistema trabado, ajusta primero esto:

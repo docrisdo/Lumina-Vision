@@ -11,8 +11,10 @@ from lumina_vision.config import AppConfig
 
 try:
     from picamera2 import Picamera2
+    from libcamera import controls
 except ImportError:
     Picamera2 = None
+    controls = None
 
 
 @dataclass(slots=True)
@@ -53,20 +55,47 @@ class CameraManager:
         )
         self._camera.configure(camera_config)
 
-        af_mode = self.config.camera_af_mode.lower()
-        controls: dict[str, Any] = {}
-        if af_mode == "continuous":
-            controls["AfMode"] = 2
-        elif af_mode == "auto":
-            controls["AfMode"] = 1
-
-        if controls:
-            self._camera.set_controls(controls)
+        camera_controls = self._build_focus_controls(for_ocr=False)
+        if camera_controls:
+            self._camera.set_controls(camera_controls)
 
         self._camera.start()
         self._backend = "picamera2"
         logger.info("Camara iniciada con Picamera2.")
         self.refocus()
+
+    def _build_focus_controls(self, for_ocr: bool) -> dict[str, Any]:
+        if controls is None:
+            af_mode = self.config.camera_af_mode.lower()
+            fallback: dict[str, Any] = {}
+            if af_mode == "continuous":
+                fallback["AfMode"] = 2
+            elif af_mode == "auto":
+                fallback["AfMode"] = 1
+            return fallback
+
+        af_mode = "auto" if for_ocr else self.config.camera_af_mode.lower()
+        focus_controls: dict[str, Any] = {}
+        if af_mode == "continuous":
+            focus_controls["AfMode"] = controls.AfModeEnum.Continuous
+        elif af_mode == "auto":
+            focus_controls["AfMode"] = controls.AfModeEnum.Auto
+            focus_controls["AfTrigger"] = controls.AfTriggerEnum.Start
+
+        af_range = "macro" if for_ocr else self.config.camera_af_range.lower()
+        if af_range == "macro":
+            focus_controls["AfRange"] = controls.AfRangeEnum.Macro
+        elif af_range == "normal":
+            focus_controls["AfRange"] = controls.AfRangeEnum.Normal
+        elif af_range == "full":
+            focus_controls["AfRange"] = controls.AfRangeEnum.Full
+
+        if self.config.camera_af_speed.lower() == "fast":
+            focus_controls["AfSpeed"] = controls.AfSpeedEnum.Fast
+        elif self.config.camera_af_speed.lower() == "normal":
+            focus_controls["AfSpeed"] = controls.AfSpeedEnum.Normal
+
+        return focus_controls
 
     def _start_opencv(self) -> None:
         capture = cv2.VideoCapture(0)
@@ -109,10 +138,9 @@ class CameraManager:
             return
 
         try:
-            if af_mode == "auto":
-                self._camera.set_controls({"AfMode": 1, "AfTrigger": 0})
-            else:
-                self._camera.set_controls({"AfMode": 2})
+            focus_controls = self._build_focus_controls(for_ocr=True)
+            if focus_controls:
+                self._camera.set_controls(focus_controls)
             if self.config.camera_focus_settle_seconds > 0:
                 time.sleep(self.config.camera_focus_settle_seconds)
         except Exception as exc:

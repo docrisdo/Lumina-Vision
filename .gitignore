@@ -18,5 +18,7 @@ captures/
 Thumbs.db
 Desktop.ini
 models/*.tflite
+models/tts/*.onnx
+models/tts/*.onnx.json
 !models/README.md
 !models/coco_labels.txt

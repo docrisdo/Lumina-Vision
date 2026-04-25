@@ -35,6 +35,8 @@ class AppConfig:
     camera_hflip: bool
     camera_vflip: bool
     camera_af_mode: str
+    camera_af_range: str
+    camera_af_speed: str
     camera_color_mode: str
     camera_refocus_before_ocr: bool
     camera_focus_settle_seconds: float
@@ -57,6 +59,8 @@ class AppConfig:
     tts_engine: str
     tts_output: str
     tts_startup_test: bool
+    piper_model_path: Path
+    piper_output_file: Path
     speech_rate: int
     speech_volume: float
     speech_cooldown_seconds: float
@@ -68,18 +72,20 @@ class AppConfig:
     def load(cls) -> "AppConfig":
         load_dotenv()
         return cls(
-            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 960),
-            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 540),
+            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1280),
+            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 720),
             camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
             camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
+            camera_af_range=_env_str("LUMINA_CAMERA_AF_RANGE", "full"),
+            camera_af_speed=_env_str("LUMINA_CAMERA_AF_SPEED", "fast"),
             camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "rgb_to_bgr"),
             camera_refocus_before_ocr=_env_bool("LUMINA_CAMERA_REFOCUS_BEFORE_OCR", True),
             camera_focus_settle_seconds=max(
                 0.0,
-                _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.2),
+                _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.8),
             ),
-            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 15.0)),
+            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 12.0)),
             preview_max_width=max(320, _env_int("LUMINA_PREVIEW_MAX_WIDTH", 960)),
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
@@ -105,10 +111,19 @@ class AppConfig:
                 _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 2.0),
             ),
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
-            ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 960)),
+            ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 1280)),
             tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
             tts_output=_env_str("LUMINA_TTS_OUTPUT", "direct"),
             tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", True),
+            piper_model_path=Path(
+                _env_str(
+                    "LUMINA_PIPER_MODEL_PATH",
+                    "models/tts/es_MX-ald-medium.onnx",
+                ),
+            ),
+            piper_output_file=Path(
+                _env_str("LUMINA_PIPER_OUTPUT_FILE", "/tmp/lumina_voice.wav"),
+            ),
             speech_rate=_env_int("LUMINA_SPEECH_RATE", 170),
             speech_volume=_env_float("LUMINA_SPEECH_VOLUME", 1.0),
             speech_cooldown_seconds=max(

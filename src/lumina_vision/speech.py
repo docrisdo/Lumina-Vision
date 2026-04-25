@@ -32,8 +32,10 @@ class SpeechEngine:
 
     def _resolve_engine(self) -> str:
         configured = self.config.tts_engine.lower()
-        if configured in {"espeak-ng", "pyttsx3"}:
+        if configured in {"piper", "espeak-ng", "pyttsx3"}:
             return configured
+        if shutil.which("piper") and self.config.piper_model_path.exists():
+            return "piper"
         if shutil.which("espeak-ng"):
             return "espeak-ng"
         if pyttsx3 is not None:
@@ -125,6 +127,38 @@ class SpeechEngine:
         if result.returncode != 0:
             logger.warning("espeak-ng fallo: {}", result.stderr.strip())
 
+    def _speak_with_piper(self, text: str) -> None:
+        if not self.config.piper_model_path.exists():
+            logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
+            return
+
+        result = subprocess.run(
+            [
+                "piper",
+                "--model",
+                str(self.config.piper_model_path),
+                "--output_file",
+                str(self.config.piper_output_file),
+            ],
+            input=text,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning("Piper fallo: {}", result.stderr.strip())
+            return
+
+        player = "paplay" if shutil.which("paplay") else "aplay"
+        play_result = subprocess.run(
+            [player, str(self.config.piper_output_file)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if play_result.returncode != 0:
+            logger.warning("{} fallo: {}", player, play_result.stderr.strip())
+
     def _worker(self) -> None:
         while self._running:
             try:
@@ -133,7 +167,9 @@ class SpeechEngine:
                 continue
 
             try:
-                if self._engine_name == "espeak-ng":
+                if self._engine_name == "piper":
+                    self._speak_with_piper(text)
+                elif self._engine_name == "espeak-ng":
                     self._speak_with_espeak(text)
                 elif self._engine_name == "pyttsx3" and self._pyttsx3_engine is not None:
                     self._pyttsx3_engine.say(text)
