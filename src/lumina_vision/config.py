@@ -61,6 +61,7 @@ class AppConfig:
     tts_startup_test: bool
     piper_model_path: Path
     piper_output_file: Path
+    piper_cache_dir: Path
     speech_rate: int
     speech_volume: float
     speech_cooldown_seconds: float
@@ -114,7 +115,7 @@ class AppConfig:
             ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 1280)),
             tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
             tts_output=_env_str("LUMINA_TTS_OUTPUT", "direct"),
-            tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", True),
+            tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", False),
             piper_model_path=Path(
                 _env_str(
                     "LUMINA_PIPER_MODEL_PATH",
@@ -123,6 +124,9 @@ class AppConfig:
             ),
             piper_output_file=Path(
                 _env_str("LUMINA_PIPER_OUTPUT_FILE", "/tmp/lumina_voice.wav"),
+            ),
+            piper_cache_dir=Path(
+                _env_str("LUMINA_PIPER_CACHE_DIR", "/tmp/lumina_piper_cache"),
             ),
             speech_rate=_env_int("LUMINA_SPEECH_RATE", 170),
             speech_volume=_env_float("LUMINA_SPEECH_VOLUME", 1.0),

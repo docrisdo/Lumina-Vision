@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import queue
 import shutil
 import subprocess
@@ -156,28 +157,31 @@ class SpeechEngine:
             logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
             return
 
-        command = [
-            "piper",
-            "--model",
-            str(self.config.piper_model_path),
-            "--output_file",
-            str(self.config.piper_output_file),
-        ]
+        self.config.piper_cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_key = hashlib.sha1(text.encode("utf-8")).hexdigest()
+        cached_output = self.config.piper_cache_dir / f"{cache_key}.wav"
 
-        result = subprocess.run(
-            command,
-            input=text,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            logger.warning("Piper fallo: {}", result.stderr.strip())
-            return
+        if not cached_output.exists():
+            result = subprocess.run(
+                [
+                    "piper",
+                    "--model",
+                    str(self.config.piper_model_path),
+                    "--output_file",
+                    str(cached_output),
+                ],
+                input=text,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                logger.warning("Piper fallo: {}", result.stderr.strip())
+                return
 
         player = "paplay" if shutil.which("paplay") else "aplay"
         play_result = subprocess.run(
-            [player, str(self.config.piper_output_file)],
+            [player, str(cached_output)],
             capture_output=True,
             text=True,
             check=False,

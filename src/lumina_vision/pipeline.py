@@ -172,7 +172,7 @@ class LuminaPipeline:
                 for label, count in counter.most_common(3)
             )
             logger.info("Anunciando objetos por voz: {}", message)
-            self.speech.speak(f"Objetos detectados: {message}")
+            self.speech.speak(message)
             self._last_object_signature = signature
             self._speech_gate.mark()
 

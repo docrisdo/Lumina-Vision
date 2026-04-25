@@ -167,6 +167,7 @@ Despues ajusta `.env`:
 ```env
 LUMINA_TTS_ENGINE=piper
 LUMINA_PIPER_MODEL_PATH=models/tts/es_MX-ald-medium.onnx
+LUMINA_TTS_STARTUP_TEST=false
 ```
 
 Si en Raspberry sientes el sistema trabado, ajusta primero esto:
