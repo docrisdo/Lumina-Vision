@@ -132,14 +132,33 @@ class SpeechEngine:
             logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
             return
 
-        result = subprocess.run(
-            [
+        help_result = subprocess.run(
+            ["piper", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        help_text = f"{help_result.stdout}\n{help_result.stderr}"
+
+        if "--model" in help_text:
+            command = [
                 "piper",
                 "--model",
                 str(self.config.piper_model_path),
                 "--output_file",
                 str(self.config.piper_output_file),
-            ],
+            ]
+        else:
+            command = [
+                "piper",
+                "--voice",
+                str(self.config.piper_model_path),
+                "--output_file",
+                str(self.config.piper_output_file),
+            ]
+
+        result = subprocess.run(
+            command,
             input=text,
             capture_output=True,
             text=True,
