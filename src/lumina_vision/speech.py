@@ -32,15 +32,39 @@ class SpeechEngine:
 
     def _resolve_engine(self) -> str:
         configured = self.config.tts_engine.lower()
-        if configured in {"piper", "espeak-ng", "pyttsx3"}:
+        if configured == "piper" and self._piper_tts_available():
+            return "piper"
+        if configured == "piper":
+            logger.warning("Piper TTS no esta disponible. Usando espeak-ng si existe.")
+        if configured in {"espeak-ng", "pyttsx3"}:
             return configured
-        if shutil.which("piper") and self.config.piper_model_path.exists():
+        if self._piper_tts_available():
             return "piper"
         if shutil.which("espeak-ng"):
             return "espeak-ng"
         if pyttsx3 is not None:
             return "pyttsx3"
         return "none"
+
+    def _piper_tts_available(self) -> bool:
+        piper_path = shutil.which("piper")
+        if not piper_path or not self.config.piper_model_path.exists():
+            return False
+
+        help_result = subprocess.run(
+            [piper_path, "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        help_text = f"{help_result.stdout}\n{help_result.stderr}"
+        if "--model" not in help_text:
+            logger.warning(
+                "El comando piper encontrado no parece ser Piper TTS: {}",
+                piper_path,
+            )
+            return False
+        return True
 
     def start(self) -> None:
         if self._engine_name == "none":
@@ -132,30 +156,13 @@ class SpeechEngine:
             logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
             return
 
-        help_result = subprocess.run(
-            ["piper", "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        help_text = f"{help_result.stdout}\n{help_result.stderr}"
-
-        if "--model" in help_text:
-            command = [
-                "piper",
-                "--model",
-                str(self.config.piper_model_path),
-                "--output_file",
-                str(self.config.piper_output_file),
-            ]
-        else:
-            command = [
-                "piper",
-                "--voice",
-                str(self.config.piper_model_path),
-                "--output_file",
-                str(self.config.piper_output_file),
-            ]
+        command = [
+            "piper",
+            "--model",
+            str(self.config.piper_model_path),
+            "--output_file",
+            str(self.config.piper_output_file),
+        ]
 
         result = subprocess.run(
             command,

@@ -117,7 +117,6 @@ El script `scripts/bootstrap_pi.sh` instala:
 - `tesseract-ocr`
 - `tesseract-ocr-spa`
 - `espeak-ng`
-- `piper`
 - `pulseaudio-utils`
 - `libespeak1`
 - `ffmpeg`
@@ -155,9 +154,11 @@ source .venv/bin/activate
 python scripts/test_audio.py
 ```
 
-Para una voz mas natural que `espeak-ng`, instala Piper y descarga una voz:
+Para una voz mas natural que `espeak-ng`, instala Piper TTS con pip y descarga una voz:
 
 ```bash
+source .venv/bin/activate
+pip install piper-tts
 bash scripts/download_piper_spanish_voice.sh
 ```
 

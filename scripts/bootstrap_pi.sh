@@ -12,7 +12,6 @@ sudo apt install -y \
   tesseract-ocr \
   tesseract-ocr-spa \
   espeak-ng \
-  piper \
   pulseaudio-utils \
   libespeak1 \
   ffmpeg
