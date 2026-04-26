@@ -28,6 +28,7 @@ class CameraManager:
         self.config = config
         self._backend = "opencv"
         self._camera: Any = None
+        self._last_refocus_at = 0.0
 
     def start(self) -> None:
         if Picamera2 is not None:
@@ -50,7 +51,7 @@ class CameraManager:
         self._camera = Picamera2()
         camera_config = self._camera.create_preview_configuration(
             main={"size": (self.config.camera_width, self.config.camera_height), "format": "RGB888"},
-            buffer_count=4,
+            buffer_count=6,
             controls={"FrameRate": self.config.camera_framerate},
         )
         self._camera.configure(camera_config)
@@ -62,7 +63,7 @@ class CameraManager:
         self._camera.start()
         self._backend = "picamera2"
         logger.info("Camara iniciada con Picamera2.")
-        self.refocus()
+        self.refocus(force=True)
 
     def _build_focus_controls(self, for_ocr: bool) -> dict[str, Any]:
         if controls is None:
@@ -127,10 +128,13 @@ class CameraManager:
             raise RuntimeError("No se pudo leer un frame de la camara.")
         return frame
 
-    def refocus(self) -> None:
+    def refocus(self, *, force: bool = False) -> None:
         if self._backend != "picamera2" or self._camera is None:
             return
         if not self.config.camera_refocus_before_ocr:
+            return
+        now = time.monotonic()
+        if not force and (now - self._last_refocus_at) < self.config.camera_refocus_interval_seconds:
             return
 
         af_mode = self.config.camera_af_mode.lower()
@@ -141,8 +145,11 @@ class CameraManager:
             focus_controls = self._build_focus_controls(for_ocr=True)
             if focus_controls:
                 self._camera.set_controls(focus_controls)
+                self._last_refocus_at = now
             if self.config.camera_focus_settle_seconds > 0:
                 time.sleep(self.config.camera_focus_settle_seconds)
+            if controls is not None and self.config.camera_af_mode.lower() == "continuous":
+                self._camera.set_controls(self._build_focus_controls(for_ocr=False))
         except Exception as exc:
             logger.debug("No se pudo reenfocar la camara: {}", exc)
 

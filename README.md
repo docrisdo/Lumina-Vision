@@ -1,75 +1,35 @@
-<<<<<<< HEAD
 # Lumina Vision
 
-Proyecto listo para GitHub y para clonar en Raspberry Pi 4 con:
+Lentes inteligentes de asistencia para personas con discapacidad visual. El prototipo corre localmente en Raspberry Pi 4 con camara IMX708 autofocus, deteccion de objetos, OCR para hojas/libros y voz en espanol por audifonos.
 
-- camara IMX708 Camera Module 3 via `Picamera2`
-- deteccion de objetos con TensorFlow Lite
-- OCR con Tesseract en espanol
-- texto a voz offline en espanol
+El modulo de sensores ultrasonicos queda fuera por ahora.
 
-El modulo de ultrasonicos queda fuera por ahora.
+## Modo Principal: Lentes
 
-## Objetivo tecnico
+El sistema esta configurado para funcionar sin teclado:
 
-Esta base prioriza viabilidad real en Raspberry Pi 4 de 4 GB:
+- inicia camara, OCR, deteccion y voz automaticamente
+- prioriza leer texto cercano de hojas o libros
+- anuncia objetos escolares comunes sin repetirlos de forma molesta
+- usa voz offline en espanol, preferentemente con Piper
+- evita `cv2.imshow` por defecto para no cargar la Raspberry
 
-- captura moderada para no saturar CPU
-- detector liviano en TFLite
-- OCR por intervalos, no por frame
-- voz offline sin depender de internet
+Para pruebas con pantalla puedes cambiar en `.env`:
 
-## Estructura
-
-```text
-Lumina-Vision/
-|- main.py
-|- .env.example
-|- .gitignore
-|- requirements.txt
-|- requirements-dev.txt
-|- pyproject.toml
-|- deploy/
-|  |- lumina-vision.service
-|- models/
-|  |- coco_labels.txt
-|  |- README.md
-|- scripts/
-|  |- bootstrap_pi.sh
-|  |- run_pi.sh
-|  |- validate_runtime.py
-|  |- download_lumina_assets.py
-|- src/
-|  |- lumina_vision/
-|     |- app.py
-|     |- camera.py
-|     |- config.py
-|     |- ocr.py
-|     |- pipeline.py
-|     |- speech.py
-|     |- utils.py
-|     |- detectors/
-|        |- tflite_detector.py
-|- tests/
-   |- test_config.py
+```env
+LUMINA_SHOW_PREVIEW=true
+LUMINA_WEARABLE_MODE=false
 ```
 
-## Flujo recomendado
+## Hardware Objetivo
 
-### 1. Subir a GitHub desde Windows
+- Raspberry Pi 4 Modelo B, 4 GB RAM
+- Arducam 12MP IMX708 Autofocus Camera Module 3 NoIR
+- Audifonos o bocina conectados a la Raspberry
+- Modelo TFLite de deteccion en `models/efficientdet_lite0.tflite`
+- Sensores HC-SR04 pendientes para una fase posterior
 
-Dentro de `C:\Users\allan\Proyecto_Karla\Lumina-Vision`:
-
-```powershell
-git init
-git branch -M main
-git add .
-git commit -m "Proyecto Lumina Vision listo para Raspberry Pi"
-git remote add origin https://github.com/TU_USUARIO/Lumina-Vision.git
-git push -u origin main
-```
-
-### 2. Clonar en la Raspberry
+## Instalacion En Raspberry
 
 ```bash
 cd ~
@@ -78,125 +38,128 @@ cd Lumina-Vision
 bash scripts/bootstrap_pi.sh
 ```
 
-### 3. Colocar el modelo de deteccion
+Descarga los modelos:
 
-Pon tu modelo en:
-
-```text
-models/efficientdet_lite0.tflite
+```bash
+bash scripts/download_lumina_assets.py
+bash scripts/download_piper_spanish_voice.sh
 ```
 
-Si usas otro nombre o ruta, cambialo en `.env`.
+Si `download_lumina_assets.py` no se ejecuta directo, usa:
 
-### 4. Configurar variables
+```bash
+python scripts/download_lumina_assets.py
+```
+
+Configura variables:
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Para Raspberry sin monitor, deja:
-
-```env
-LUMINA_SHOW_PREVIEW=false
-```
-
-### 5. Ejecutar
+Ejecuta:
 
 ```bash
 bash scripts/run_pi.sh
 ```
 
-## Dependencias del sistema
+## Configuracion Recomendada Para Lentes
 
-El script `scripts/bootstrap_pi.sh` instala:
-
-- `python3-picamera2`
-- `python3-libcamera`
-- `python3-venv`
-- `tesseract-ocr`
-- `tesseract-ocr-spa`
-- `espeak-ng`
-- `pulseaudio-utils`
-- `libespeak1`
-- `ffmpeg`
-
-## Nota sobre Debian 13 / Python 3.13
-
-Si tu Raspberry usa Debian 13 (`trixie`) con Python 3.13, es posible que
-`tflite-runtime` no tenga wheel disponible para tu entorno. En ese caso instala:
-
-```bash
-pip install ai-edge-litert
+```env
+LUMINA_WEARABLE_MODE=true
+LUMINA_SHOW_PREVIEW=false
+LUMINA_ENABLE_OCR=true
+LUMINA_ENABLE_OBJECT_DETECTION=true
+LUMINA_ENABLE_TTS=true
+LUMINA_TTS_ENGINE=piper
+LUMINA_OCR_AUTO_READ=true
+LUMINA_OCR_STABLE_READS=2
+LUMINA_CAMERA_REFOCUS_BEFORE_OCR=true
 ```
 
-El proyecto ya esta preparado para usar este runtime automaticamente.
+Para diagnostico visual:
 
-## Configuracion importante
+```env
+LUMINA_WEARABLE_MODE=false
+LUMINA_SHOW_PREVIEW=true
+```
 
-Variables clave del `.env`:
+## OCR
 
-- `LUMINA_ENABLE_OBJECT_DETECTION=true`
-- `LUMINA_ENABLE_OCR=true`
-- `LUMINA_ENABLE_TTS=true`
-- `LUMINA_OCR_LANGUAGE=spa+eng`
-- `LUMINA_SHOW_PREVIEW=false` para modo headless
-- `LUMINA_CAMERA_COLOR_MODE=rgb_to_bgr`
-- `LUMINA_CAMERA_REFOCUS_BEFORE_OCR=true`
-- `LUMINA_DETECTION_RUN_EVERY_N_FRAMES=2`
-- `LUMINA_OCR_RUN_INTERVAL_SECONDS=2.0`
-- `LUMINA_TTS_OUTPUT=direct`
+El OCR esta optimizado para texto cercano, como hojas, libros y etiquetas escolares. La camara debe apuntar al texto a una distancia aproximada de 20 a 50 cm. El sistema reenfoca de forma limitada para evitar trabas y lee solo cuando el texto se mantiene estable.
 
-Para probar solo la voz:
+Si no lee texto:
+
+- mejora la iluminacion
+- acerca o aleja la hoja lentamente
+- evita movimiento mientras enfoca
+- prueba con texto grande y alto contraste
+- baja `LUMINA_OCR_MIN_SHARPNESS` si rechaza demasiado
+- sube `LUMINA_OCR_STABLE_READS` si lee basura
+
+## Voz
+
+Piper es la opcion recomendada porque suena mas natural que `espeak-ng`.
+
+```bash
+source .venv/bin/activate
+pip install piper-tts
+bash scripts/download_piper_spanish_voice.sh
+python scripts/test_audio.py
+```
+
+La app usa cache para frases repetidas, por eso frases como "Veo un libro" salen mas rapido despues de la primera vez.
+
+## Objetos Escolares
+
+El detector prioriza objetos utiles en escuela cuando el modelo los reconoce:
+
+- persona
+- libro
+- mochila
+- laptop
+- celular
+- botella
+- tijeras
+- teclado
+- raton
+- silla
+- mesa
+- reloj
+
+Limitacion importante: el modelo COCO no reconoce todos los utiles escolares, por ejemplo lapiz, cuaderno o regla. Para eso se necesita entrenar o agregar un modelo personalizado en una fase posterior.
+
+## Pruebas Basicas
+
+Compilar:
+
+```bash
+python -m compileall src scripts
+```
+
+Probar camara:
+
+```bash
+rpicam-hello -t 5000
+```
+
+Probar voz:
 
 ```bash
 source .venv/bin/activate
 python scripts/test_audio.py
 ```
 
-Para una voz mas natural que `espeak-ng`, instala Piper TTS con pip y descarga una voz:
+Probar programa:
 
 ```bash
-source .venv/bin/activate
-pip install piper-tts
-bash scripts/download_piper_spanish_voice.sh
+bash scripts/run_pi.sh
 ```
 
-Despues ajusta `.env`:
+## Servicio Automatico
 
-```env
-LUMINA_TTS_ENGINE=piper
-LUMINA_PIPER_MODEL_PATH=models/tts/es_MX-ald-medium.onnx
-LUMINA_TTS_STARTUP_TEST=false
-```
-
-Si en Raspberry sientes el sistema trabado, ajusta primero esto:
-
-```env
-LUMINA_CAMERA_WIDTH=960
-LUMINA_CAMERA_HEIGHT=540
-LUMINA_CAMERA_FRAMERATE=15
-LUMINA_DETECTION_RUN_EVERY_N_FRAMES=4
-LUMINA_OCR_RUN_INTERVAL_SECONDS=3.0
-LUMINA_OCR_MAX_WIDTH=960
-LUMINA_PREVIEW_MAX_WIDTH=960
-```
-
-Si los colores de la camara se ven alterados, prueba cambiando:
-
-```env
-LUMINA_CAMERA_COLOR_MODE=none
-```
-
-o bien:
-
-```env
-LUMINA_CAMERA_COLOR_MODE=bgr_to_rgb
-```
-
-## Servicio automatico al encender
-
-Si luego quieres que arranque solo:
+Edita `deploy/lumina-vision.service` si tu usuario no es `pi`. Luego:
 
 ```bash
 sudo cp deploy/lumina-vision.service /etc/systemd/system/
@@ -205,19 +168,10 @@ sudo systemctl enable lumina-vision
 sudo systemctl start lumina-vision
 ```
 
-Antes revisa que la ruta del usuario `pi` coincida con tu Raspberry.
+## Notas De Rendimiento
 
-## Recomendaciones para tu hardware
-
-- Usa `1280x720` para el pipeline principal, no 12 MP.
-- No corras OCR en todos los frames.
-- Si la voz habla demasiado, aumenta `LUMINA_SPEECH_COOLDOWN_SECONDS`.
-- Si no usaras pantalla, evita `cv2.imshow` con `LUMINA_SHOW_PREVIEW=false`.
-
-## Desarrollo en Windows
-
-En Windows el sistema hace fallback a `cv2.VideoCapture` porque `Picamera2` no esta disponible.
-Eso te permite desarrollar la estructura del proyecto en VS Code, pero la prueba real de camara debe hacerse en la Raspberry.
-=======
-# Lumina-Vision
->>>>>>> d140e64cc6d1cdf91b4c995cf8c7fd72318bf6bd
+- No uses 12 MP para el pipeline; `1280x720` es mas viable en Raspberry Pi 4.
+- OCR es pesado: corre por intervalos y en hilo separado.
+- Si se siente lento, sube `LUMINA_OCR_RUN_INTERVAL_SECONDS` a `3.5`.
+- Si la voz se acumula, baja `LUMINA_SPEECH_MAX_QUEUE_SIZE` a `1`.
+- Si la camara da errores `Camera frontend has timed out`, revisa flex CSI, alimentacion y que no haya otra app usando la camara.

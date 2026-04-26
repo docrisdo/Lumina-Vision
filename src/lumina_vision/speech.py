@@ -106,6 +106,12 @@ class SpeechEngine:
         if not self._running or not text.strip():
             return
         clean_text = text.strip()
+        while self._queue.qsize() >= self.config.speech_max_queue_size:
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except queue.Empty:
+                break
         logger.info("Voz en cola: {}", clean_text)
         self._queue.put(clean_text)
 

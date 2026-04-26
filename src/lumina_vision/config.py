@@ -30,6 +30,7 @@ def _env_str(name: str, default: str) -> str:
 
 @dataclass(slots=True)
 class AppConfig:
+    wearable_mode: bool
     camera_width: int
     camera_height: int
     camera_hflip: bool
@@ -39,6 +40,7 @@ class AppConfig:
     camera_af_speed: str
     camera_color_mode: str
     camera_refocus_before_ocr: bool
+    camera_refocus_interval_seconds: float
     camera_focus_settle_seconds: float
     camera_framerate: float
     preview_max_width: int
@@ -52,10 +54,16 @@ class AppConfig:
     detection_score_threshold: float
     detection_max_results: int
     detection_run_every_n_frames: int
+    school_mode: bool
     ocr_language: str
+    ocr_auto_read: bool
     ocr_run_interval_seconds: float
     ocr_min_text_length: int
     ocr_max_width: int
+    ocr_min_sharpness: float
+    ocr_stable_reads: int
+    ocr_prefer_center_crop: bool
+    ocr_suppress_objects_seconds: float
     tts_engine: str
     tts_output: str
     tts_startup_test: bool
@@ -65,6 +73,10 @@ class AppConfig:
     speech_rate: int
     speech_volume: float
     speech_cooldown_seconds: float
+    speech_object_cooldown_seconds: float
+    speech_ocr_cooldown_seconds: float
+    speech_repeat_same_object_seconds: float
+    speech_max_queue_size: int
     speech_enable_objects: bool
     speech_enable_ocr: bool
     log_level: str
@@ -72,7 +84,9 @@ class AppConfig:
     @classmethod
     def load(cls) -> "AppConfig":
         load_dotenv()
+        wearable_mode = _env_bool("LUMINA_WEARABLE_MODE", True)
         return cls(
+            wearable_mode=wearable_mode,
             camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1280),
             camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 720),
             camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
@@ -82,16 +96,20 @@ class AppConfig:
             camera_af_speed=_env_str("LUMINA_CAMERA_AF_SPEED", "fast"),
             camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "rgb_to_bgr"),
             camera_refocus_before_ocr=_env_bool("LUMINA_CAMERA_REFOCUS_BEFORE_OCR", True),
+            camera_refocus_interval_seconds=max(
+                1.0,
+                _env_float("LUMINA_CAMERA_REFOCUS_INTERVAL_SECONDS", 4.0),
+            ),
             camera_focus_settle_seconds=max(
                 0.0,
                 _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.8),
             ),
-            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 12.0)),
+            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 10.0)),
             preview_max_width=max(320, _env_int("LUMINA_PREVIEW_MAX_WIDTH", 960)),
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
             enable_tts=_env_bool("LUMINA_ENABLE_TTS", True),
-            show_preview=_env_bool("LUMINA_SHOW_PREVIEW", True),
+            show_preview=_env_bool("LUMINA_SHOW_PREVIEW", not wearable_mode),
             save_debug_frames=_env_bool("LUMINA_SAVE_DEBUG_FRAMES", False),
             detection_model_path=Path(
                 _env_str(
@@ -104,15 +122,24 @@ class AppConfig:
             detection_max_results=_env_int("LUMINA_DETECTION_MAX_RESULTS", 5),
             detection_run_every_n_frames=max(
                 1,
-                _env_int("LUMINA_DETECTION_RUN_EVERY_N_FRAMES", 2),
+                _env_int("LUMINA_DETECTION_RUN_EVERY_N_FRAMES", 4),
             ),
+            school_mode=_env_bool("LUMINA_SCHOOL_MODE", True),
             ocr_language=_env_str("LUMINA_OCR_LANGUAGE", "spa+eng"),
+            ocr_auto_read=_env_bool("LUMINA_OCR_AUTO_READ", True),
             ocr_run_interval_seconds=max(
                 0.2,
-                _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 2.0),
+                _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 2.5),
             ),
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
             ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 1280)),
+            ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 45.0)),
+            ocr_stable_reads=max(1, _env_int("LUMINA_OCR_STABLE_READS", 2)),
+            ocr_prefer_center_crop=_env_bool("LUMINA_OCR_PREFER_CENTER_CROP", True),
+            ocr_suppress_objects_seconds=max(
+                0.0,
+                _env_float("LUMINA_OCR_SUPPRESS_OBJECTS_SECONDS", 8.0),
+            ),
             tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
             tts_output=_env_str("LUMINA_TTS_OUTPUT", "direct"),
             tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", False),
@@ -134,6 +161,19 @@ class AppConfig:
                 0.5,
                 _env_float("LUMINA_SPEECH_COOLDOWN_SECONDS", 4.0),
             ),
+            speech_object_cooldown_seconds=max(
+                1.0,
+                _env_float("LUMINA_SPEECH_OBJECT_COOLDOWN_SECONDS", 7.0),
+            ),
+            speech_ocr_cooldown_seconds=max(
+                1.0,
+                _env_float("LUMINA_SPEECH_OCR_COOLDOWN_SECONDS", 3.0),
+            ),
+            speech_repeat_same_object_seconds=max(
+                5.0,
+                _env_float("LUMINA_SPEECH_REPEAT_SAME_OBJECT_SECONDS", 45.0),
+            ),
+            speech_max_queue_size=max(1, _env_int("LUMINA_SPEECH_MAX_QUEUE_SIZE", 2)),
             speech_enable_objects=_env_bool("LUMINA_SPEECH_ENABLE_OBJECTS", True),
             speech_enable_ocr=_env_bool("LUMINA_SPEECH_ENABLE_OCR", True),
             log_level=_env_str("LUMINA_LOG_LEVEL", "INFO"),

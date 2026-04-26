@@ -27,6 +27,7 @@ SCHOOL_OBJECT_PRIORITY = {
     "silla",
     "mesa",
     "reloj",
+    "persona",
 }
 
 
@@ -37,12 +38,20 @@ class LuminaPipeline:
         self.detector = ObjectDetector(config)
         self.ocr = OCRService(config)
         self.speech = SpeechEngine(config)
-        self._speech_gate = CooldownGate(config.speech_cooldown_seconds)
+        self._object_speech_gate = CooldownGate(config.speech_object_cooldown_seconds)
+        self._ocr_speech_gate = CooldownGate(config.speech_ocr_cooldown_seconds)
         self._last_ocr_at = 0.0
+        self._last_ocr_speech_at = 0.0
+        self._last_object_speech_at = 0.0
         self._frame_index = 0
         self._last_ocr_text = ""
         self._last_object_signature = ""
         self._latest_ocr_text = ""
+        self._latest_ocr_sharpness = 0.0
+        self._latest_ocr_status = "OCR esperando texto"
+        self._ocr_candidate_text = ""
+        self._ocr_candidate_count = 0
+        self._force_ocr = False
         self._ocr_lock = threading.Lock()
         self._ocr_worker: threading.Thread | None = None
 
@@ -75,7 +84,7 @@ class LuminaPipeline:
                 if detection_ready and self._frame_index % self.config.detection_run_every_n_frames == 0:
                     detections = self.detector.detect(frame)
 
-                if self.config.enable_ocr:
+                if self.config.enable_ocr and self.config.ocr_auto_read:
                     self._maybe_start_ocr(frame)
                     with self._ocr_lock:
                         ocr_text = self._latest_ocr_text
@@ -92,6 +101,12 @@ class LuminaPipeline:
                     key = cv2.waitKey(1) & 0xFF
                     if key in (27, ord("q")):
                         break
+                    if key == ord("r"):
+                        self._force_ocr = True
+                        logger.info("Lectura OCR manual solicitada.")
+                    if key == ord("f"):
+                        self.camera.refocus(force=True)
+                        logger.info("Reenfoque manual solicitado.")
         finally:
             self.camera.stop()
             self.speech.stop()
@@ -104,30 +119,47 @@ class LuminaPipeline:
         return (now_monotonic() - self._last_ocr_at) >= self.config.ocr_run_interval_seconds
 
     def _maybe_start_ocr(self, frame) -> None:
-        if not self._should_run_ocr():
+        if not self._force_ocr and not self._should_run_ocr():
             return
         if self._ocr_worker is not None and self._ocr_worker.is_alive():
             return
 
         frame_copy = frame.copy()
+        force_ocr = self._force_ocr
+        self._force_ocr = False
         self._last_ocr_at = now_monotonic()
         self._ocr_worker = threading.Thread(
             target=self._run_ocr_job,
-            args=(frame_copy,),
+            args=(frame_copy, force_ocr),
             name="lumina-ocr",
             daemon=True,
         )
         self._ocr_worker.start()
 
-    def _run_ocr_job(self, frame) -> None:
-        self.camera.refocus()
+    def _run_ocr_job(self, frame, force_ocr: bool) -> None:
+        self.camera.refocus(force=force_ocr)
         result = self.ocr.extract_text(frame)
         with self._ocr_lock:
-            self._latest_ocr_text = result.text if result is not None else ""
+            if result is None:
+                self._latest_ocr_status = "OCR: texto borroso o no detectado"
+                self._latest_ocr_text = ""
+                self._latest_ocr_sharpness = 0.0
+                return
+
+            self._latest_ocr_sharpness = result.sharpness
+            if result.text == self._ocr_candidate_text:
+                self._ocr_candidate_count += 1
+            else:
+                self._ocr_candidate_text = result.text
+                self._ocr_candidate_count = 1
+
+            if force_ocr or self._ocr_candidate_count >= self.config.ocr_stable_reads:
+                self._latest_ocr_text = result.text
+                self._latest_ocr_status = f"OCR: {result.text[:80]}"
+            else:
+                self._latest_ocr_status = "OCR: confirmando texto"
         if result is not None:
-            logger.info("OCR detecto texto: {}", result.text[:160])
-        else:
-            logger.debug("OCR no detecto texto util.")
+            logger.info("OCR detecto texto: {} | nitidez {:.1f}", result.text[:160], result.sharpness)
 
     def _resize_preview(self, frame):
         height, width = frame.shape[:2]
@@ -141,14 +173,23 @@ class LuminaPipeline:
         )
 
     def _handle_speech(self, detections: list[Detection], ocr_text: str) -> None:
-        if not self.config.enable_tts or not self._speech_gate.ready():
+        if not self.config.enable_tts:
             return
 
-        if self.config.speech_enable_ocr and ocr_text and ocr_text != self._last_ocr_text:
+        if (
+            self.config.speech_enable_ocr
+            and ocr_text
+            and ocr_text != self._last_ocr_text
+            and self._ocr_speech_gate.ready()
+        ):
             logger.info("Anunciando texto por voz: {}", ocr_text[:160])
-            self.speech.speak(f"Texto detectado: {ocr_text}")
+            self.speech.speak(f"Leo: {ocr_text}")
             self._last_ocr_text = ocr_text
-            self._speech_gate.mark()
+            self._last_ocr_speech_at = now_monotonic()
+            self._ocr_speech_gate.mark()
+            return
+
+        if self._objects_suppressed_by_ocr():
             return
 
         if self.config.speech_enable_objects and detections:
@@ -165,16 +206,39 @@ class LuminaPipeline:
                 f"{label}:{count}"
                 for label, count in counter.most_common(3)
             )
-            if signature == self._last_object_signature:
-                return
-            message = ", ".join(
-                f"{count} {label}" if count > 1 else f"un {label}"
-                for label, count in counter.most_common(3)
+            same_object_recently_spoken = (
+                signature == self._last_object_signature
+                and (now_monotonic() - self._last_object_speech_at)
+                < self.config.speech_repeat_same_object_seconds
             )
+            if same_object_recently_spoken or not self._object_speech_gate.ready():
+                return
+            message = self._format_object_message(counter)
             logger.info("Anunciando objetos por voz: {}", message)
             self.speech.speak(message)
             self._last_object_signature = signature
-            self._speech_gate.mark()
+            self._last_object_speech_at = now_monotonic()
+            self._object_speech_gate.mark()
+
+    def _objects_suppressed_by_ocr(self) -> bool:
+        return (
+            self._last_ocr_speech_at > 0
+            and (now_monotonic() - self._last_ocr_speech_at)
+            < self.config.ocr_suppress_objects_seconds
+        )
+
+    def _format_object_message(self, counter: Counter[str]) -> str:
+        labels = counter.most_common(2 if self.config.wearable_mode else 3)
+        if not labels:
+            return ""
+        parts = []
+        for label, count in labels:
+            if count > 1:
+                parts.append(f"{count} {label}")
+            else:
+                article = "una" if label.endswith("a") else "un"
+                parts.append(f"{article} {label}")
+        return f"Veo {', '.join(parts)}"
 
     def _annotate_frame(self, frame, detections: list[Detection], ocr_text: str):
         annotated = frame.copy()
@@ -208,6 +272,7 @@ class LuminaPipeline:
             )
 
         status = (
+            f"MODO={'LENTES' if self.config.wearable_mode else 'PRUEBA'} "
             f"OBJ={'ON' if self.config.enable_object_detection else 'OFF'} "
             f"OCR={'ON' if self.config.enable_ocr else 'OFF'} "
             f"TTS={'ON' if self.config.enable_tts else 'OFF'}"
@@ -222,4 +287,26 @@ class LuminaPipeline:
             2,
             cv2.LINE_AA,
         )
+        if not self.config.wearable_mode:
+            cv2.putText(
+                annotated,
+                "Diagnostico: R leer texto | F reenfocar | Q salir",
+                (20, annotated.shape[0] - 48),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (50, 200, 255),
+                2,
+                cv2.LINE_AA,
+            )
+        if self._latest_ocr_status:
+            cv2.putText(
+                annotated,
+                self._latest_ocr_status[:90],
+                (20, 28),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (255, 230, 60),
+                2,
+                cv2.LINE_AA,
+            )
         return annotated
