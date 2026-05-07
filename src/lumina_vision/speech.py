@@ -80,6 +80,12 @@ class SpeechEngine:
         if self.config.tts_startup_test:
             self.speak("Sistema de voz listo.")
 
+    def warmup(self, phrases: list[str]) -> None:
+        if self._engine_name != "piper":
+            return
+        for phrase in phrases:
+            self._ensure_piper_audio(phrase.strip())
+
     def _configure_spanish_voice(self) -> None:
         if self._pyttsx3_engine is None:
             return
@@ -159,31 +165,9 @@ class SpeechEngine:
             logger.warning("espeak-ng fallo: {}", result.stderr.strip())
 
     def _speak_with_piper(self, text: str) -> None:
-        if not self.config.piper_model_path.exists():
-            logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
+        cached_output = self._ensure_piper_audio(text)
+        if cached_output is None:
             return
-
-        self.config.piper_cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_key = hashlib.sha1(text.encode("utf-8")).hexdigest()
-        cached_output = self.config.piper_cache_dir / f"{cache_key}.wav"
-
-        if not cached_output.exists():
-            result = subprocess.run(
-                [
-                    "piper",
-                    "--model",
-                    str(self.config.piper_model_path),
-                    "--output_file",
-                    str(cached_output),
-                ],
-                input=text,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                logger.warning("Piper fallo: {}", result.stderr.strip())
-                return
 
         player = "paplay" if shutil.which("paplay") else "aplay"
         play_result = subprocess.run(
@@ -194,6 +178,38 @@ class SpeechEngine:
         )
         if play_result.returncode != 0:
             logger.warning("{} fallo: {}", player, play_result.stderr.strip())
+
+    def _ensure_piper_audio(self, text: str):
+        if not text:
+            return None
+        if not self.config.piper_model_path.exists():
+            logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
+            return None
+
+        self.config.piper_cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_key = hashlib.sha1(text.encode("utf-8")).hexdigest()
+        cached_output = self.config.piper_cache_dir / f"{cache_key}.wav"
+
+        if cached_output.exists():
+            return cached_output
+
+        result = subprocess.run(
+            [
+                "piper",
+                "--model",
+                str(self.config.piper_model_path),
+                "--output_file",
+                str(cached_output),
+            ],
+            input=text,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning("Piper fallo: {}", result.stderr.strip())
+            return None
+        return cached_output
 
     def _worker(self) -> None:
         while self._running:
