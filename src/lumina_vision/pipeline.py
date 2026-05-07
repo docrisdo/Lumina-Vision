@@ -46,6 +46,8 @@ class LuminaPipeline:
         self._frame_index = 0
         self._last_ocr_text = ""
         self._last_object_signature = ""
+        self._latest_detections: list[Detection] = []
+        self._latest_detection_at = 0.0
         self._latest_ocr_text = ""
         self._latest_ocr_sharpness = 0.0
         self._latest_ocr_status = "OCR esperando texto"
@@ -60,6 +62,18 @@ class LuminaPipeline:
 
         if self.config.enable_tts:
             self.speech.start()
+            self.speech.warmup(
+                [
+                    "Veo una persona",
+                    "Veo un libro",
+                    "Veo una mochila",
+                    "Veo una laptop",
+                    "Veo un celular",
+                    "Veo una botella",
+                    "Veo una silla",
+                    "Veo una mesa",
+                ],
+            )
 
         detection_ready = False
         if self.config.enable_object_detection:
@@ -76,13 +90,15 @@ class LuminaPipeline:
         try:
             while True:
                 frame = self.camera.read()
-                detections: list[Detection] = []
                 ocr_text = ""
 
                 self._frame_index += 1
 
                 if detection_ready and self._frame_index % self.config.detection_run_every_n_frames == 0:
-                    detections = self.detector.detect(frame)
+                    self._latest_detections = self.detector.detect(frame)
+                    self._latest_detection_at = now_monotonic()
+
+                detections = self._visible_detections()
 
                 if self.config.enable_ocr and self.config.ocr_auto_read:
                     self._maybe_start_ocr(frame)
@@ -171,6 +187,13 @@ class LuminaPipeline:
             (int(width * scale), int(height * scale)),
             interpolation=cv2.INTER_AREA,
         )
+
+    def _visible_detections(self) -> list[Detection]:
+        if not self._latest_detections:
+            return []
+        if (now_monotonic() - self._latest_detection_at) > 2.0:
+            return []
+        return self._latest_detections
 
     def _handle_speech(self, detections: list[Detection], ocr_text: str) -> None:
         if not self.config.enable_tts:
