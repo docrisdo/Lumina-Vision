@@ -19,12 +19,14 @@ def main() -> int:
 
     logger.info("Iniciando Lumina Vision.")
     logger.info(
-        "Configuracion: camara={}x{}, obj={}, ocr={}, tts={}",
+        "Configuracion: camara={}x{}, obj={}, ocr={}, tts={}, preview={}, modo_lentes={}",
         config.camera_width,
         config.camera_height,
         config.enable_object_detection,
         config.enable_ocr,
         config.enable_tts,
+        config.show_preview,
+        config.wearable_mode,
     )
 
     pipeline = LuminaPipeline(config)
