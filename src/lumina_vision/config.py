@@ -94,7 +94,7 @@ class AppConfig:
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
             camera_af_range=_env_str("LUMINA_CAMERA_AF_RANGE", "full"),
             camera_af_speed=_env_str("LUMINA_CAMERA_AF_SPEED", "fast"),
-            camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "rgb_to_bgr"),
+            camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "none"),
             camera_refocus_before_ocr=_env_bool("LUMINA_CAMERA_REFOCUS_BEFORE_OCR", True),
             camera_refocus_interval_seconds=max(
                 1.0,
