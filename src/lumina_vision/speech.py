@@ -52,12 +52,17 @@ class SpeechEngine:
         if not piper_path or not self.config.piper_model_path.exists():
             return False
 
-        help_result = subprocess.run(
-            [piper_path, "--help"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            help_result = subprocess.run(
+                [piper_path, "--help"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self.config.tts_command_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("Piper no respondio a tiempo al validar el comando.")
+            return False
         help_text = f"{help_result.stdout}\n{help_result.stderr}"
         if "--model" not in help_text:
             logger.warning(
@@ -85,6 +90,15 @@ class SpeechEngine:
             return
         for phrase in phrases:
             self._ensure_piper_audio(phrase.strip())
+
+    def warmup_async(self, phrases: list[str]) -> None:
+        thread = threading.Thread(
+            target=self.warmup,
+            args=(phrases,),
+            name="lumina-tts-warmup",
+            daemon=True,
+        )
+        thread.start()
 
     def _configure_spanish_voice(self) -> None:
         if self._pyttsx3_engine is None:
@@ -145,6 +159,7 @@ class SpeechEngine:
                 capture_output=True,
                 text=False,
                 check=False,
+                timeout=self.config.tts_command_timeout_seconds,
             )
             if espeak.stdout is not None:
                 espeak.stdout.close()
@@ -160,6 +175,7 @@ class SpeechEngine:
             capture_output=True,
             text=True,
             check=False,
+            timeout=self.config.tts_command_timeout_seconds,
         )
         if result.returncode != 0:
             logger.warning("espeak-ng fallo: {}", result.stderr.strip())
@@ -175,6 +191,7 @@ class SpeechEngine:
             capture_output=True,
             text=True,
             check=False,
+            timeout=self.config.tts_command_timeout_seconds,
         )
         if play_result.returncode != 0:
             logger.warning("{} fallo: {}", player, play_result.stderr.strip())
@@ -205,6 +222,7 @@ class SpeechEngine:
             capture_output=True,
             text=True,
             check=False,
+            timeout=self.config.tts_command_timeout_seconds,
         )
         if result.returncode != 0:
             logger.warning("Piper fallo: {}", result.stderr.strip())

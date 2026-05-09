@@ -43,6 +43,7 @@ class AppConfig:
     camera_refocus_interval_seconds: float
     camera_focus_settle_seconds: float
     camera_framerate: float
+    camera_buffer_count: int
     preview_max_width: int
     enable_object_detection: bool
     enable_ocr: bool
@@ -67,6 +68,8 @@ class AppConfig:
     tts_engine: str
     tts_output: str
     tts_startup_test: bool
+    tts_warmup: bool
+    tts_command_timeout_seconds: float
     piper_model_path: Path
     piper_output_file: Path
     piper_cache_dir: Path
@@ -87,8 +90,8 @@ class AppConfig:
         wearable_mode = _env_bool("LUMINA_WEARABLE_MODE", True)
         return cls(
             wearable_mode=wearable_mode,
-            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1536),
-            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 864),
+            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 768),
+            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 432),
             camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
             camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
@@ -102,11 +105,12 @@ class AppConfig:
             ),
             camera_focus_settle_seconds=max(
                 0.0,
-                _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.7),
+                _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.5),
             ),
             camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 10.0)),
+            camera_buffer_count=max(2, _env_int("LUMINA_CAMERA_BUFFER_COUNT", 2)),
             preview_max_width=max(320, _env_int("LUMINA_PREVIEW_MAX_WIDTH", 960)),
-            enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
+            enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", False),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
             enable_tts=_env_bool("LUMINA_ENABLE_TTS", True),
             show_preview=_env_bool("LUMINA_SHOW_PREVIEW", not wearable_mode),
@@ -132,7 +136,7 @@ class AppConfig:
                 _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 1.6),
             ),
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
-            ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 1536)),
+            ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 768)),
             ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 20.0)),
             ocr_stable_reads=max(1, _env_int("LUMINA_OCR_STABLE_READS", 1)),
             ocr_prefer_center_crop=_env_bool("LUMINA_OCR_PREFER_CENTER_CROP", True),
@@ -143,6 +147,11 @@ class AppConfig:
             tts_engine=_env_str("LUMINA_TTS_ENGINE", "auto"),
             tts_output=_env_str("LUMINA_TTS_OUTPUT", "direct"),
             tts_startup_test=_env_bool("LUMINA_TTS_STARTUP_TEST", False),
+            tts_warmup=_env_bool("LUMINA_TTS_WARMUP", False),
+            tts_command_timeout_seconds=max(
+                2.0,
+                _env_float("LUMINA_TTS_COMMAND_TIMEOUT_SECONDS", 8.0),
+            ),
             piper_model_path=Path(
                 _env_str(
                     "LUMINA_PIPER_MODEL_PATH",

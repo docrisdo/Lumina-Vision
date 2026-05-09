@@ -62,18 +62,19 @@ class LuminaPipeline:
 
         if self.config.enable_tts:
             self.speech.start()
-            self.speech.warmup(
-                [
-                    "Veo una persona",
-                    "Veo un libro",
-                    "Veo una mochila",
-                    "Veo una laptop",
-                    "Veo un celular",
-                    "Veo una botella",
-                    "Veo una silla",
-                    "Veo una mesa",
-                ],
-            )
+            if self.config.tts_warmup:
+                self.speech.warmup_async(
+                    [
+                        "Veo una persona",
+                        "Veo un libro",
+                        "Veo una mochila",
+                        "Veo una laptop",
+                        "Veo un celular",
+                        "Veo una botella",
+                        "Veo una silla",
+                        "Veo una mesa",
+                    ],
+                )
 
         detection_ready = False
         if self.config.enable_object_detection:
