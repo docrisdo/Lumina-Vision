@@ -53,7 +53,7 @@ class CameraManager:
         self._camera = Picamera2()
         camera_config = self._camera.create_preview_configuration(
             main={"size": (self.config.camera_width, self.config.camera_height), "format": "RGB888"},
-            buffer_count=6,
+            buffer_count=4,
             controls={"FrameRate": self.config.camera_framerate},
         )
         self._camera.configure(camera_config)

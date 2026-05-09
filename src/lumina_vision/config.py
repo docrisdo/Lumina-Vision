@@ -87,8 +87,8 @@ class AppConfig:
         wearable_mode = _env_bool("LUMINA_WEARABLE_MODE", True)
         return cls(
             wearable_mode=wearable_mode,
-            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1920),
-            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 1080),
+            camera_width=_env_int("LUMINA_CAMERA_WIDTH", 1536),
+            camera_height=_env_int("LUMINA_CAMERA_HEIGHT", 864),
             camera_hflip=_env_bool("LUMINA_CAMERA_HFLIP", False),
             camera_vflip=_env_bool("LUMINA_CAMERA_VFLIP", False),
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
@@ -104,7 +104,7 @@ class AppConfig:
                 0.0,
                 _env_float("LUMINA_CAMERA_FOCUS_SETTLE_SECONDS", 0.7),
             ),
-            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 8.0)),
+            camera_framerate=max(5.0, _env_float("LUMINA_CAMERA_FRAMERATE", 10.0)),
             preview_max_width=max(320, _env_int("LUMINA_PREVIEW_MAX_WIDTH", 960)),
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", True),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
@@ -132,7 +132,7 @@ class AppConfig:
                 _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 1.6),
             ),
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
-            ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 1600)),
+            ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 1536)),
             ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 20.0)),
             ocr_stable_reads=max(1, _env_int("LUMINA_OCR_STABLE_READS", 1)),
             ocr_prefer_center_crop=_env_bool("LUMINA_OCR_PREFER_CENTER_CROP", True),
