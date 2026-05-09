@@ -151,6 +151,15 @@ source .venv/bin/activate
 python scripts/test_audio.py
 ```
 
+Probar OCR con una captura guardada:
+
+```bash
+source .venv/bin/activate
+python scripts/test_ocr_capture.py
+```
+
+La imagen usada por OCR queda en `debug_ocr/ocr_original.jpg`. Si no lee, abre esa imagen y revisa si el texto realmente sale enfocado, grande y con buena luz.
+
 Probar programa:
 
 ```bash

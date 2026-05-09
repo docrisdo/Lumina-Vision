@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
 import time
 from typing import Any
 
@@ -29,6 +30,7 @@ class CameraManager:
         self._backend = "opencv"
         self._camera: Any = None
         self._last_refocus_at = 0.0
+        self._lock = threading.RLock()
 
     def start(self) -> None:
         if Picamera2 is not None:
@@ -110,23 +112,24 @@ class CameraManager:
         logger.info("Camara iniciada con OpenCV.")
 
     def read(self) -> Any:
-        if self._backend == "picamera2":
-            frame = self._camera.capture_array()
-            color_mode = self.config.camera_color_mode.lower()
-            if color_mode == "rgb_to_bgr":
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            elif color_mode == "bgr_to_rgb":
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            if self.config.camera_hflip:
-                frame = cv2.flip(frame, 1)
-            if self.config.camera_vflip:
-                frame = cv2.flip(frame, 0)
-            return frame
+        with self._lock:
+            if self._backend == "picamera2":
+                frame = self._camera.capture_array()
+                color_mode = self.config.camera_color_mode.lower()
+                if color_mode == "rgb_to_bgr":
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                elif color_mode == "bgr_to_rgb":
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                if self.config.camera_hflip:
+                    frame = cv2.flip(frame, 1)
+                if self.config.camera_vflip:
+                    frame = cv2.flip(frame, 0)
+                return frame
 
-        ok, frame = self._camera.read()
-        if not ok:
-            raise RuntimeError("No se pudo leer un frame de la camara.")
-        return frame
+            ok, frame = self._camera.read()
+            if not ok:
+                raise RuntimeError("No se pudo leer un frame de la camara.")
+            return frame
 
     def refocus(self, *, force: bool = False) -> None:
         if self._backend != "picamera2" or self._camera is None:
@@ -142,14 +145,15 @@ class CameraManager:
             return
 
         try:
-            focus_controls = self._build_focus_controls(for_ocr=True)
-            if focus_controls:
-                self._camera.set_controls(focus_controls)
-                self._last_refocus_at = now
-            if self.config.camera_focus_settle_seconds > 0:
-                time.sleep(self.config.camera_focus_settle_seconds)
-            if controls is not None and self.config.camera_af_mode.lower() == "continuous":
-                self._camera.set_controls(self._build_focus_controls(for_ocr=False))
+            with self._lock:
+                focus_controls = self._build_focus_controls(for_ocr=True)
+                if focus_controls:
+                    self._camera.set_controls(focus_controls)
+                    self._last_refocus_at = now
+                if self.config.camera_focus_settle_seconds > 0:
+                    time.sleep(self.config.camera_focus_settle_seconds)
+                if controls is not None and self.config.camera_af_mode.lower() == "continuous":
+                    self._camera.set_controls(self._build_focus_controls(for_ocr=False))
         except Exception as exc:
             logger.debug("No se pudo reenfocar la camara: {}", exc)
 

@@ -154,6 +154,10 @@ class LuminaPipeline:
 
     def _run_ocr_job(self, frame, force_ocr: bool) -> None:
         self.camera.refocus(force=force_ocr)
+        try:
+            frame = self.camera.read()
+        except Exception as exc:
+            logger.debug("OCR usara el frame anterior porque no pudo capturar uno nuevo: {}", exc)
         result = self.ocr.extract_text(frame)
         with self._ocr_lock:
             if result is None:

@@ -11,7 +11,8 @@ def now_monotonic() -> float:
 
 def clean_ocr_text(raw_text: str) -> str:
     text = re.sub(r"\s+", " ", raw_text).strip()
-    return re.sub(r"[^\w\s,.;:!?áéíóúÁÉÍÓÚñÑüÜ-]", "", text)
+    text = re.sub(r"[^\w\s,.;:!?áéíóúÁÉÍÓÚñÑüÜ-]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 @dataclass(slots=True)

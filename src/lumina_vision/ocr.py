@@ -6,6 +6,7 @@ import re
 import cv2
 import numpy as np
 import pytesseract
+from pytesseract import Output
 
 from lumina_vision.config import AppConfig
 from lumina_vision.utils import clean_ocr_text
@@ -31,10 +32,10 @@ class OCRService:
 
     def _center_crop(self, frame: np.ndarray) -> np.ndarray:
         height, width = frame.shape[:2]
-        x1 = int(width * 0.05)
-        x2 = int(width * 0.95)
-        y1 = int(height * 0.10)
-        y2 = int(height * 0.90)
+        x1 = int(width * 0.04)
+        x2 = int(width * 0.96)
+        y1 = int(height * 0.08)
+        y2 = int(height * 0.92)
         return frame[y1:y2, x1:x2]
 
     def sharpness(self, frame: np.ndarray) -> float:
@@ -74,7 +75,7 @@ class OCRService:
         )
         adaptive_inv = cv2.bitwise_not(adaptive)
 
-        return [sharpened, denoised, otsu, adaptive, adaptive_inv]
+        return [gray, sharpened, denoised, otsu, adaptive, adaptive_inv]
 
     def _score_text(self, text: str) -> tuple[int, int, int]:
         letters = sum(char.isalpha() for char in text)
@@ -89,8 +90,34 @@ class OCRService:
             "-c user_defined_dpi=300"
         )
 
+    def _text_from_data(self, image: np.ndarray, psm: int) -> tuple[str, float]:
+        data = pytesseract.image_to_data(
+            image,
+            lang=self.config.ocr_language,
+            config=self._ocr_config(psm),
+            output_type=Output.DICT,
+            timeout=4,
+        )
+        words: list[str] = []
+        confidences: list[float] = []
+        for raw_text, raw_conf in zip(data.get("text", []), data.get("conf", []), strict=False):
+            text = clean_ocr_text(str(raw_text))
+            if not text:
+                continue
+            try:
+                confidence = float(raw_conf)
+            except ValueError:
+                confidence = -1.0
+            if confidence >= 25 or len(text) >= self.config.ocr_min_text_length:
+                words.append(text)
+                if confidence >= 0:
+                    confidences.append(confidence)
+        if not words:
+            return "", 0.0
+        return clean_ocr_text(" ".join(words)), float(np.mean(confidences)) if confidences else 0.0
+
     def extract_text(self, frame: np.ndarray) -> OCRResult | None:
-        candidates: list[str] = []
+        candidates: list[tuple[str, float]] = []
         frame = self._limit_width(frame)
         frame_sharpness = self.sharpness(frame)
         if frame_sharpness < self.config.ocr_min_sharpness:
@@ -100,19 +127,24 @@ class OCRService:
         for region in regions:
             for rotated in (self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0)):
                 for variant in self._preprocess_variants(rotated):
-                    for psm in (6, 11, 7, 13):
+                    for psm in (6, 11, 4, 7):
+                        cleaned, confidence = self._text_from_data(variant, psm)
+                        if len(cleaned) >= self.config.ocr_min_text_length:
+                            candidates.append((cleaned, confidence))
+                            continue
                         text = pytesseract.image_to_string(
                             variant,
                             lang=self.config.ocr_language,
                             config=self._ocr_config(psm),
-                            timeout=3,
+                            timeout=4,
                         )
                         cleaned = clean_ocr_text(text)
                         if len(cleaned) >= self.config.ocr_min_text_length:
-                            candidates.append(cleaned)
+                            candidates.append((cleaned, 0.0))
 
         if not candidates:
             return None
 
-        candidates.sort(key=self._score_text, reverse=True)
-        return OCRResult(text=candidates[0], confidence_hint=0.5, sharpness=frame_sharpness)
+        candidates.sort(key=lambda item: (*self._score_text(item[0]), item[1]), reverse=True)
+        text, confidence = candidates[0]
+        return OCRResult(text=text, confidence_hint=confidence, sharpness=frame_sharpness)
