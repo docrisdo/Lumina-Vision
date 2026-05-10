@@ -31,11 +31,14 @@ def main() -> int:
         camera.refocus(force=True)
         frame = camera.read()
         cv2.imwrite(str(debug_dir / "ocr_original.jpg"), frame)
+        for index, variant in enumerate(ocr._preprocess_variants(frame)):
+            cv2.imwrite(str(debug_dir / f"ocr_variant_{index}.jpg"), variant)
 
         result = ocr.extract_text(frame)
         if result is None:
             print("[Lumina] OCR no detecto texto util.")
             print(f"[Lumina] Imagen guardada en: {debug_dir / 'ocr_original.jpg'}")
+            print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_variant_*.jpg'}")
             print("[Lumina] Prueba con texto grande, bien iluminado, a 20-50 cm y sin mover la hoja.")
             return 1
 
@@ -43,6 +46,7 @@ def main() -> int:
         print(result.text)
         print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
         print(f"[Lumina] Imagen guardada en: {debug_dir / 'ocr_original.jpg'}")
+        print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_variant_*.jpg'}")
         return 0
     finally:
         camera.stop()

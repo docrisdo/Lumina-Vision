@@ -127,7 +127,7 @@ class OCRService:
         for region in regions:
             for rotated in (self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0)):
                 for variant in self._preprocess_variants(rotated):
-                    for psm in (6, 11, 4, 7):
+                    for psm in (6, 11, 4, 7, 8, 10, 13):
                         cleaned, confidence = self._text_from_data(variant, psm)
                         if len(cleaned) >= self.config.ocr_min_text_length:
                             candidates.append((cleaned, confidence))

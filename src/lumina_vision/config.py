@@ -137,7 +137,7 @@ class AppConfig:
             ),
             ocr_min_text_length=max(1, _env_int("LUMINA_OCR_MIN_TEXT_LENGTH", 4)),
             ocr_max_width=max(320, _env_int("LUMINA_OCR_MAX_WIDTH", 768)),
-            ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 20.0)),
+            ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 0.0)),
             ocr_stable_reads=max(1, _env_int("LUMINA_OCR_STABLE_READS", 1)),
             ocr_prefer_center_crop=_env_bool("LUMINA_OCR_PREFER_CENTER_CROP", True),
             ocr_suppress_objects_seconds=max(
