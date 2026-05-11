@@ -87,6 +87,28 @@ class OCRService:
         noise = sum(char in "|[]{}_=~^" for char in text)
         return words, letters, len(text) - noise * 4
 
+    def _looks_like_text(self, text: str) -> bool:
+        tokens = re.findall(r"\w+", text, flags=re.UNICODE)
+        if not tokens:
+            return False
+
+        letters = sum(char.isalpha() for char in text)
+        if letters < max(3, self.config.ocr_min_text_length - 1):
+            return False
+
+        single_letter_tokens = sum(1 for token in tokens if len(token) == 1 and token.isalpha())
+        alpha_tokens = [token for token in tokens if any(char.isalpha() for char in token)]
+        useful_tokens = [token for token in alpha_tokens if len(token) >= 2]
+
+        if len(tokens) == 1:
+            return len(tokens[0]) >= max(3, self.config.ocr_min_text_length - 1)
+
+        if not useful_tokens:
+            return False
+
+        # OCR noise often appears as many isolated letters: "i A a 4".
+        return single_letter_tokens <= max(2, len(useful_tokens))
+
     def _ocr_config(self, psm: int, *, large_text: bool = False) -> str:
         whitelist = ""
         if large_text:
@@ -127,8 +149,8 @@ class OCRService:
             return "", 0.0
         return clean_ocr_text(" ".join(words)), float(np.mean(confidences)) if confidences else 0.0
 
-    def _extract_large_text(self, variants: list[np.ndarray]) -> tuple[str, float] | None:
-        best: tuple[str, float] | None = None
+    def _extract_large_text(self, variants: list[np.ndarray]) -> tuple[str, float, int] | None:
+        best: tuple[str, float, int] | None = None
         for variant in variants:
             for psm in (8, 7, 13):
                 text = pytesseract.image_to_string(
@@ -141,22 +163,24 @@ class OCRService:
                 letters = sum(char.isalpha() for char in cleaned)
                 if letters < max(2, self.config.ocr_min_text_length - 1):
                     continue
+                if not self._looks_like_text(cleaned):
+                    continue
                 score = float(letters * 10 + len(cleaned))
                 if best is None or score > best[1]:
-                    best = (cleaned, score)
+                    best = (cleaned, score, 2)
         return best
 
-    def _extract_regular_text(self, variants: list[np.ndarray]) -> list[tuple[str, float]]:
-        candidates: list[tuple[str, float]] = []
+    def _extract_regular_text(self, variants: list[np.ndarray]) -> list[tuple[str, float, int]]:
+        candidates: list[tuple[str, float, int]] = []
         for variant in variants:
             for psm in (6, 11, 4):
                 cleaned, confidence = self._text_from_data(variant, psm)
-                if len(cleaned) >= self.config.ocr_min_text_length:
-                    candidates.append((cleaned, confidence))
+                if len(cleaned) >= self.config.ocr_min_text_length and self._looks_like_text(cleaned):
+                    candidates.append((cleaned, confidence, 1))
         return candidates
 
     def extract_text(self, frame: np.ndarray) -> OCRResult | None:
-        candidates: list[tuple[str, float]] = []
+        candidates: list[tuple[str, float, int]] = []
         frame = self._limit_width(frame)
         frame_sharpness = self.sharpness(frame)
         if frame_sharpness < self.config.ocr_min_sharpness:
@@ -179,6 +203,6 @@ class OCRService:
         if not candidates:
             return None
 
-        candidates.sort(key=lambda item: (*self._score_text(item[0]), item[1]), reverse=True)
-        text, confidence = candidates[0]
+        candidates.sort(key=lambda item: (item[2], *self._score_text(item[0]), item[1]), reverse=True)
+        text, confidence, _priority = candidates[0]
         return OCRResult(text=text, confidence_hint=confidence, sharpness=frame_sharpness)
