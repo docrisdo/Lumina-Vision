@@ -77,6 +77,24 @@ class OCRService:
 
         return [otsu, adaptive, adaptive_inv, sharpened, denoised, gray]
 
+    def _preprocess_page_variants(self, frame: np.ndarray) -> list[np.ndarray]:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.fastNlMeansDenoising(gray, None, 8, 7, 21)
+        clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
+        contrast = clahe.apply(gray)
+        sharpened = cv2.addWeighted(contrast, 1.5, cv2.GaussianBlur(contrast, (0, 0), 1.0), -0.5, 0)
+        otsu = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        adaptive = cv2.adaptiveThreshold(
+            sharpened,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            41,
+            15,
+        )
+        return [otsu, adaptive, sharpened, contrast]
+
     def best_debug_variant(self, frame: np.ndarray) -> np.ndarray:
         variants = self._preprocess_variants(self._center_crop(self._limit_width(frame)))
         return variants[0]
@@ -86,6 +104,9 @@ class OCRService:
         words = len(re.findall(r"[^\W\d_]{2,}", text, flags=re.UNICODE))
         noise = sum(char in "|[]{}_=~^" for char in text)
         return words, letters, len(text) - noise * 4
+
+    def _word_count(self, text: str) -> int:
+        return len(re.findall(r"[^\W\d_]{2,}", text, flags=re.UNICODE))
 
     def _looks_like_text(self, text: str) -> bool:
         tokens = re.findall(r"\w+", text, flags=re.UNICODE)
@@ -110,7 +131,7 @@ class OCRService:
         return single_letter_tokens <= max(2, len(useful_tokens))
 
     def _clean_large_text_candidate(self, text: str) -> str:
-        tokens = re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+", text)
+        tokens = re.findall(r"\w+", text, flags=re.UNICODE)
         if not tokens:
             return ""
 
@@ -173,6 +194,53 @@ class OCRService:
             return "", 0.0
         return clean_ocr_text(" ".join(words)), float(np.mean(confidences)) if confidences else 0.0
 
+    def _text_lines_from_data(self, image: np.ndarray, psm: int) -> tuple[str, float]:
+        data = pytesseract.image_to_data(
+            image,
+            lang=self.config.ocr_language,
+            config=self._ocr_config(psm),
+            output_type=Output.DICT,
+            timeout=6,
+        )
+        lines: dict[tuple[int, int, int], list[str]] = {}
+        confidences: list[float] = []
+        for index, raw_text in enumerate(data.get("text", [])):
+            text = clean_ocr_text(str(raw_text))
+            if not text:
+                continue
+            try:
+                confidence = float(data.get("conf", [])[index])
+            except (ValueError, IndexError):
+                confidence = -1.0
+            if confidence < 30 and len(text) < self.config.ocr_min_text_length:
+                continue
+            key = (
+                int(data.get("block_num", [0])[index]),
+                int(data.get("par_num", [0])[index]),
+                int(data.get("line_num", [0])[index]),
+            )
+            lines.setdefault(key, []).append(text)
+            if confidence >= 0:
+                confidences.append(confidence)
+
+        ordered_lines = [clean_ocr_text(" ".join(words)) for _key, words in sorted(lines.items())]
+        ordered_lines = [line for line in ordered_lines if self._looks_like_text(line)]
+        text = clean_ocr_text(". ".join(ordered_lines))
+        return text, float(np.mean(confidences)) if confidences else 0.0
+
+    def _extract_page_text(self, region: np.ndarray) -> list[tuple[str, float, int]]:
+        candidates: list[tuple[str, float, int]] = []
+        for rotated in (self._rotate(region, 0), self._rotate(region, -1.5), self._rotate(region, 1.5)):
+            variants = self._preprocess_page_variants(rotated)
+            for variant in variants:
+                for psm in (6, 4, 3):
+                    text, confidence = self._text_lines_from_data(variant, psm)
+                    if self._word_count(text) >= 5 and self._looks_like_text(text):
+                        candidates.append((text, confidence, 3))
+            if candidates:
+                break
+        return candidates
+
     def _extract_large_text(self, variants: list[np.ndarray]) -> tuple[str, float, int] | None:
         best: tuple[str, float, int] | None = None
         for variant in variants:
@@ -212,6 +280,11 @@ class OCRService:
 
         regions = [self._center_crop(frame), frame] if self.config.ocr_prefer_center_crop else [frame]
         for region in regions:
+            if self.config.ocr_page_mode:
+                candidates.extend(self._extract_page_text(region))
+                if candidates:
+                    break
+
             for rotation_index, rotated in enumerate((self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0))):
                 variants = self._preprocess_variants(rotated)
                 large_text = self._extract_large_text(variants)

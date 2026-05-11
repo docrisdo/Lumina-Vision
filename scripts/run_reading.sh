@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_DIR"
+
+if [[ ! -d .venv ]]; then
+  echo "[Lumina] No existe .venv. Ejecuta primero: bash scripts/bootstrap_pi.sh"
+  exit 1
+fi
+
+source .venv/bin/activate
+export LUMINA_WEARABLE_MODE=true
+export LUMINA_SHOW_PREVIEW=false
+export LUMINA_ENABLE_OBJECT_DETECTION=false
+export LUMINA_ENABLE_OCR=true
+export LUMINA_ENABLE_TTS=true
+export LUMINA_OCR_PAGE_MODE=true
+export LUMINA_OCR_RUN_INTERVAL_SECONDS="${LUMINA_OCR_RUN_INTERVAL_SECONDS:-3.5}"
+export LUMINA_OCR_STABLE_READS="${LUMINA_OCR_STABLE_READS:-1}"
+export LUMINA_CAMERA_WIDTH="${LUMINA_CAMERA_WIDTH:-1536}"
+export LUMINA_CAMERA_HEIGHT="${LUMINA_CAMERA_HEIGHT:-864}"
+export LUMINA_CAMERA_FRAMERATE="${LUMINA_CAMERA_FRAMERATE:-5}"
+export LUMINA_CAMERA_BUFFER_COUNT="${LUMINA_CAMERA_BUFFER_COUNT:-2}"
+export LUMINA_CAMERA_COLOR_MODE="${LUMINA_CAMERA_COLOR_MODE:-none}"
+export LUMINA_CAMERA_REFOCUS_INTERVAL_SECONDS="${LUMINA_CAMERA_REFOCUS_INTERVAL_SECONDS:-4.0}"
+export LUMINA_CAMERA_FOCUS_SETTLE_SECONDS="${LUMINA_CAMERA_FOCUS_SETTLE_SECONDS:-0.8}"
+export LUMINA_OCR_MAX_WIDTH="${LUMINA_OCR_MAX_WIDTH:-1536}"
+export LUMINA_TTS_WARMUP=false
+
+python scripts/validate_runtime.py
+python main.py

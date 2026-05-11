@@ -58,6 +58,7 @@ class AppConfig:
     school_mode: bool
     ocr_language: str
     ocr_auto_read: bool
+    ocr_page_mode: bool
     ocr_run_interval_seconds: float
     ocr_min_text_length: int
     ocr_max_width: int
@@ -131,6 +132,7 @@ class AppConfig:
             school_mode=_env_bool("LUMINA_SCHOOL_MODE", True),
             ocr_language=_env_str("LUMINA_OCR_LANGUAGE", "spa+eng"),
             ocr_auto_read=_env_bool("LUMINA_OCR_AUTO_READ", True),
+            ocr_page_mode=_env_bool("LUMINA_OCR_PAGE_MODE", True),
             ocr_run_interval_seconds=max(
                 0.2,
                 _env_float("LUMINA_OCR_RUN_INTERVAL_SECONDS", 1.6),
