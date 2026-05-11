@@ -18,6 +18,37 @@ from lumina_vision.config import AppConfig
 from lumina_vision.ocr import OCRService
 
 
+def _configure_for_page_test(config: AppConfig) -> None:
+    config.camera_width = 1536
+    config.camera_height = 864
+    config.camera_framerate = 5.0
+    config.camera_buffer_count = 2
+    config.camera_focus_settle_seconds = max(config.camera_focus_settle_seconds, 0.8)
+    config.ocr_max_width = 1536
+    config.ocr_page_mode = True
+
+
+def _sharpness_label(sharpness: float) -> tuple[str, tuple[int, int, int]]:
+    if sharpness >= 80:
+        return "ENFOQUE BUENO", (0, 220, 0)
+    if sharpness >= 35:
+        return "ENFOQUE ACEPTABLE", (0, 200, 255)
+    return "BORROSO: acerca/aleja y presiona F", (0, 0, 255)
+
+
+def _best_sharp_frame(camera: CameraManager, ocr: OCRService, samples: int = 8):
+    best_frame = None
+    best_sharpness = -1.0
+    for _ in range(samples):
+        frame = camera.read()
+        sharpness = ocr.sharpness(ocr._center_crop(frame))
+        if sharpness > best_sharpness:
+            best_frame = frame
+            best_sharpness = sharpness
+        time.sleep(0.08)
+    return best_frame, best_sharpness
+
+
 def _preview_capture(camera: CameraManager, ocr: OCRService):
     print("[Lumina] Acomoda el texto dentro de la ventana.")
     print("[Lumina] Presiona ESPACIO para capturar, F para reenfocar, Q para salir.")
@@ -25,10 +56,16 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         frame = camera.read()
         preview = frame.copy()
         height, width = preview.shape[:2]
+        page_x1 = int(width * 0.22)
+        page_x2 = int(width * 0.78)
+        page_y1 = int(height * 0.06)
+        page_y2 = int(height * 0.94)
+        live_sharpness = ocr.sharpness(ocr._center_crop(frame))
+        focus_text, focus_color = _sharpness_label(live_sharpness)
         cv2.rectangle(
             preview,
-            (int(width * 0.08), int(height * 0.12)),
-            (int(width * 0.92), int(height * 0.88)),
+            (page_x1, page_y1),
+            (page_x2, page_y2),
             (0, 255, 255),
             2,
         )
@@ -42,17 +79,39 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
             2,
             cv2.LINE_AA,
         )
+        cv2.putText(
+            preview,
+            f"{focus_text} | nitidez={live_sharpness:.1f}",
+            (20, 62),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            focus_color,
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            preview,
+            "La hoja debe llenar el rectangulo, no toda la pantalla.",
+            (20, height - 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
         cv2.imshow("Lumina OCR Capture", preview)
         key = cv2.waitKey(1) & 0xFF
         if key in (ord("q"), 27):
             raise KeyboardInterrupt
         if key == ord("f"):
             camera.refocus(force=True)
-            time.sleep(0.3)
+            time.sleep(0.8)
         if key == 32:
             camera.refocus(force=True)
-            time.sleep(0.3)
-            return camera.read()
+            time.sleep(0.8)
+            frame, sharpness = _best_sharp_frame(camera, ocr)
+            print(f"[Lumina] Captura elegida con nitidez: {sharpness:.1f}")
+            return frame
 
 
 def main() -> int:
@@ -65,6 +124,7 @@ def main() -> int:
     args = parser.parse_args()
 
     config = AppConfig.load()
+    _configure_for_page_test(config)
     debug_dir = ROOT_DIR / "debug_ocr"
     debug_dir.mkdir(parents=True, exist_ok=True)
 
