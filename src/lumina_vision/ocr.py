@@ -75,19 +75,30 @@ class OCRService:
         )
         adaptive_inv = cv2.bitwise_not(adaptive)
 
-        return [gray, sharpened, denoised, otsu, adaptive, adaptive_inv]
+        return [otsu, adaptive, adaptive_inv, sharpened, denoised, gray]
+
+    def best_debug_variant(self, frame: np.ndarray) -> np.ndarray:
+        variants = self._preprocess_variants(self._center_crop(self._limit_width(frame)))
+        return variants[0]
 
     def _score_text(self, text: str) -> tuple[int, int, int]:
         letters = sum(char.isalpha() for char in text)
-        words = len(re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{2,}", text))
+        words = len(re.findall(r"[^\W\d_]{2,}", text, flags=re.UNICODE))
         noise = sum(char in "|[]{}_=~^" for char in text)
         return words, letters, len(text) - noise * 4
 
-    def _ocr_config(self, psm: int) -> str:
+    def _ocr_config(self, psm: int, *, large_text: bool = False) -> str:
+        whitelist = ""
+        if large_text:
+            whitelist = (
+                " -c tessedit_char_whitelist="
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+            )
         return (
             f"--oem 1 --psm {psm} "
             "-c preserve_interword_spaces=1 "
             "-c user_defined_dpi=300"
+            f"{whitelist}"
         )
 
     def _text_from_data(self, image: np.ndarray, psm: int) -> tuple[str, float]:
@@ -116,6 +127,34 @@ class OCRService:
             return "", 0.0
         return clean_ocr_text(" ".join(words)), float(np.mean(confidences)) if confidences else 0.0
 
+    def _extract_large_text(self, variants: list[np.ndarray]) -> tuple[str, float] | None:
+        best: tuple[str, float] | None = None
+        for variant in variants:
+            for psm in (8, 7, 13):
+                text = pytesseract.image_to_string(
+                    variant,
+                    lang=self.config.ocr_language,
+                    config=self._ocr_config(psm, large_text=True),
+                    timeout=2,
+                )
+                cleaned = clean_ocr_text(text)
+                letters = sum(char.isalpha() for char in cleaned)
+                if letters < max(2, self.config.ocr_min_text_length - 1):
+                    continue
+                score = float(letters * 10 + len(cleaned))
+                if best is None or score > best[1]:
+                    best = (cleaned, score)
+        return best
+
+    def _extract_regular_text(self, variants: list[np.ndarray]) -> list[tuple[str, float]]:
+        candidates: list[tuple[str, float]] = []
+        for variant in variants:
+            for psm in (6, 11, 4):
+                cleaned, confidence = self._text_from_data(variant, psm)
+                if len(cleaned) >= self.config.ocr_min_text_length:
+                    candidates.append((cleaned, confidence))
+        return candidates
+
     def extract_text(self, frame: np.ndarray) -> OCRResult | None:
         candidates: list[tuple[str, float]] = []
         frame = self._limit_width(frame)
@@ -125,22 +164,17 @@ class OCRService:
 
         regions = [self._center_crop(frame), frame] if self.config.ocr_prefer_center_crop else [frame]
         for region in regions:
-            for rotated in (self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0)):
-                for variant in self._preprocess_variants(rotated):
-                    for psm in (6, 11, 4, 7, 8, 10, 13):
-                        cleaned, confidence = self._text_from_data(variant, psm)
-                        if len(cleaned) >= self.config.ocr_min_text_length:
-                            candidates.append((cleaned, confidence))
-                            continue
-                        text = pytesseract.image_to_string(
-                            variant,
-                            lang=self.config.ocr_language,
-                            config=self._ocr_config(psm),
-                            timeout=4,
-                        )
-                        cleaned = clean_ocr_text(text)
-                        if len(cleaned) >= self.config.ocr_min_text_length:
-                            candidates.append((cleaned, 0.0))
+            for rotation_index, rotated in enumerate((self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0))):
+                variants = self._preprocess_variants(rotated)
+                large_text = self._extract_large_text(variants)
+                if large_text is not None:
+                    candidates.append(large_text)
+                candidates.extend(self._extract_regular_text(variants[:4]))
+
+                if candidates and rotation_index == 0:
+                    break
+            if candidates:
+                break
 
         if not candidates:
             return None
