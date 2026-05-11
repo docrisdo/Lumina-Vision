@@ -104,11 +104,9 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         if key in (ord("q"), 27):
             raise KeyboardInterrupt
         if key == ord("f"):
-            camera.refocus(force=True)
-            time.sleep(0.8)
+            camera.autofocus_cycle()
         if key == 32:
-            camera.refocus(force=True)
-            time.sleep(0.8)
+            camera.autofocus_cycle()
             frame, sharpness = _best_sharp_frame(camera, ocr)
             print(f"[Lumina] Captura elegida con nitidez: {sharpness:.1f}")
             return frame

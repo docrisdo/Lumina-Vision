@@ -38,6 +38,7 @@ class AppConfig:
     camera_af_mode: str
     camera_af_range: str
     camera_af_speed: str
+    camera_lens_position: float
     camera_color_mode: str
     camera_refocus_before_ocr: bool
     camera_refocus_interval_seconds: float
@@ -98,6 +99,7 @@ class AppConfig:
             camera_af_mode=_env_str("LUMINA_CAMERA_AF_MODE", "continuous"),
             camera_af_range=_env_str("LUMINA_CAMERA_AF_RANGE", "full"),
             camera_af_speed=_env_str("LUMINA_CAMERA_AF_SPEED", "fast"),
+            camera_lens_position=_env_float("LUMINA_CAMERA_LENS_POSITION", -1.0),
             camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "none"),
             camera_refocus_before_ocr=_env_bool("LUMINA_CAMERA_REFOCUS_BEFORE_OCR", True),
             camera_refocus_interval_seconds=max(

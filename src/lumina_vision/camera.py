@@ -68,6 +68,17 @@ class CameraManager:
         self.refocus(force=True)
 
     def _build_focus_controls(self, for_ocr: bool) -> dict[str, Any]:
+        if self.config.camera_lens_position >= 0:
+            if controls is not None:
+                return {
+                    "AfMode": controls.AfModeEnum.Manual,
+                    "LensPosition": self.config.camera_lens_position,
+                }
+            return {
+                "AfMode": 0,
+                "LensPosition": self.config.camera_lens_position,
+            }
+
         if controls is None:
             af_mode = self.config.camera_af_mode.lower()
             fallback: dict[str, Any] = {}
@@ -99,6 +110,38 @@ class CameraManager:
             focus_controls["AfSpeed"] = controls.AfSpeedEnum.Normal
 
         return focus_controls
+
+    def set_lens_position(self, lens_position: float) -> None:
+        if self._backend != "picamera2" or self._camera is None:
+            return
+        with self._lock:
+            if controls is not None:
+                self._camera.set_controls(
+                    {
+                        "AfMode": controls.AfModeEnum.Manual,
+                        "LensPosition": lens_position,
+                    },
+                )
+            else:
+                self._camera.set_controls({"AfMode": 0, "LensPosition": lens_position})
+            self._last_refocus_at = time.monotonic()
+
+    def autofocus_cycle(self) -> None:
+        if self._backend != "picamera2" or self._camera is None:
+            return
+        if controls is None:
+            self.refocus(force=True)
+            return
+        with self._lock:
+            self._camera.set_controls(
+                {
+                    "AfMode": controls.AfModeEnum.Auto,
+                    "AfRange": controls.AfRangeEnum.Full,
+                    "AfSpeed": controls.AfSpeedEnum.Normal,
+                    "AfTrigger": controls.AfTriggerEnum.Start,
+                },
+            )
+            time.sleep(max(1.0, self.config.camera_focus_settle_seconds))
 
     def _start_opencv(self) -> None:
         capture = cv2.VideoCapture(0)
@@ -135,6 +178,11 @@ class CameraManager:
         if self._backend != "picamera2" or self._camera is None:
             return
         if not self.config.camera_refocus_before_ocr:
+            return
+        if self.config.camera_lens_position >= 0:
+            self.set_lens_position(self.config.camera_lens_position)
+            if self.config.camera_focus_settle_seconds > 0:
+                time.sleep(self.config.camera_focus_settle_seconds)
             return
         now = time.monotonic()
         if not force and (now - self._last_refocus_at) < self.config.camera_refocus_interval_seconds:
