@@ -109,6 +109,30 @@ class OCRService:
         # OCR noise often appears as many isolated letters: "i A a 4".
         return single_letter_tokens <= max(2, len(useful_tokens))
 
+    def _clean_large_text_candidate(self, text: str) -> str:
+        tokens = re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+", text)
+        if not tokens:
+            return ""
+
+        strong_tokens: list[str] = []
+        for token in tokens:
+            letters = [char for char in token if char.isalpha()]
+            if len(letters) < max(3, self.config.ocr_min_text_length - 1):
+                continue
+            uppercase_letters = sum(char.isupper() for char in letters)
+            uppercase_ratio = uppercase_letters / float(len(letters))
+            if token.isupper() or uppercase_ratio >= 0.75:
+                strong_tokens.append(token)
+
+        if strong_tokens:
+            return clean_ocr_text(" ".join(strong_tokens))
+
+        useful_tokens = [token for token in tokens if len(token) >= self.config.ocr_min_text_length]
+        if len(useful_tokens) == 1:
+            return clean_ocr_text(useful_tokens[0])
+
+        return clean_ocr_text(text)
+
     def _ocr_config(self, psm: int, *, large_text: bool = False) -> str:
         whitelist = ""
         if large_text:
@@ -159,7 +183,7 @@ class OCRService:
                     config=self._ocr_config(psm, large_text=True),
                     timeout=2,
                 )
-                cleaned = clean_ocr_text(text)
+                cleaned = self._clean_large_text_candidate(clean_ocr_text(text))
                 letters = sum(char.isalpha() for char in cleaned)
                 if letters < max(2, self.config.ocr_min_text_length - 1):
                     continue
