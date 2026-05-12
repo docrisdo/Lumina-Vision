@@ -205,7 +205,7 @@ class AppConfig:
             ),
             ultrasonic_alert_distance_cm=max(
                 5.0,
-                _env_float("LUMINA_ULTRASONIC_ALERT_DISTANCE_CM", 45.0),
+                _env_float("LUMINA_ULTRASONIC_ALERT_DISTANCE_CM", 15.0),
             ),
             ultrasonic_poll_interval_seconds=max(
                 0.05,
