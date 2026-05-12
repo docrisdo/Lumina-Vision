@@ -49,6 +49,7 @@ class AppConfig:
     enable_object_detection: bool
     enable_ocr: bool
     enable_tts: bool
+    enable_ultrasonic: bool
     show_preview: bool
     save_debug_frames: bool
     detection_model_path: Path
@@ -84,6 +85,12 @@ class AppConfig:
     speech_max_queue_size: int
     speech_enable_objects: bool
     speech_enable_ocr: bool
+    ultrasonic_trigger_pin: int
+    ultrasonic_echo_pin: int
+    ultrasonic_max_distance_m: float
+    ultrasonic_alert_distance_cm: float
+    ultrasonic_poll_interval_seconds: float
+    ultrasonic_alert_cooldown_seconds: float
     log_level: str
 
     @classmethod
@@ -116,6 +123,7 @@ class AppConfig:
             enable_object_detection=_env_bool("LUMINA_ENABLE_OBJECT_DETECTION", False),
             enable_ocr=_env_bool("LUMINA_ENABLE_OCR", True),
             enable_tts=_env_bool("LUMINA_ENABLE_TTS", True),
+            enable_ultrasonic=_env_bool("LUMINA_ENABLE_ULTRASONIC", False),
             show_preview=_env_bool("LUMINA_SHOW_PREVIEW", not wearable_mode),
             save_debug_frames=_env_bool("LUMINA_SAVE_DEBUG_FRAMES", False),
             detection_model_path=Path(
@@ -189,5 +197,23 @@ class AppConfig:
             speech_max_queue_size=max(1, _env_int("LUMINA_SPEECH_MAX_QUEUE_SIZE", 1)),
             speech_enable_objects=_env_bool("LUMINA_SPEECH_ENABLE_OBJECTS", True),
             speech_enable_ocr=_env_bool("LUMINA_SPEECH_ENABLE_OCR", True),
+            ultrasonic_trigger_pin=_env_int("LUMINA_ULTRASONIC_TRIGGER_PIN", 23),
+            ultrasonic_echo_pin=_env_int("LUMINA_ULTRASONIC_ECHO_PIN", 24),
+            ultrasonic_max_distance_m=max(
+                0.5,
+                _env_float("LUMINA_ULTRASONIC_MAX_DISTANCE_M", 3.0),
+            ),
+            ultrasonic_alert_distance_cm=max(
+                5.0,
+                _env_float("LUMINA_ULTRASONIC_ALERT_DISTANCE_CM", 45.0),
+            ),
+            ultrasonic_poll_interval_seconds=max(
+                0.05,
+                _env_float("LUMINA_ULTRASONIC_POLL_INTERVAL_SECONDS", 0.2),
+            ),
+            ultrasonic_alert_cooldown_seconds=max(
+                1.0,
+                _env_float("LUMINA_ULTRASONIC_ALERT_COOLDOWN_SECONDS", 3.0),
+            ),
             log_level=_env_str("LUMINA_LOG_LEVEL", "INFO"),
         )

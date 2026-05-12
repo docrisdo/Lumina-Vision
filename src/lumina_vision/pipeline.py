@@ -12,6 +12,7 @@ from lumina_vision.config import AppConfig
 from lumina_vision.detectors.tflite_detector import Detection, ObjectDetector
 from lumina_vision.ocr import OCRService
 from lumina_vision.speech import SpeechEngine
+from lumina_vision.ultrasonic import UltrasonicMonitor
 from lumina_vision.utils import CooldownGate, now_monotonic
 
 
@@ -38,8 +39,10 @@ class LuminaPipeline:
         self.detector = ObjectDetector(config)
         self.ocr = OCRService(config)
         self.speech = SpeechEngine(config)
+        self.ultrasonic = UltrasonicMonitor(config)
         self._object_speech_gate = CooldownGate(config.speech_object_cooldown_seconds)
         self._ocr_speech_gate = CooldownGate(config.speech_ocr_cooldown_seconds)
+        self._ultrasonic_speech_gate = CooldownGate(config.ultrasonic_alert_cooldown_seconds)
         self._last_ocr_at = 0.0
         self._last_ocr_speech_at = 0.0
         self._last_object_speech_at = 0.0
@@ -76,6 +79,8 @@ class LuminaPipeline:
                     ],
                 )
 
+        self.ultrasonic.start()
+
         detection_ready = False
         if self.config.enable_object_detection:
             try:
@@ -107,7 +112,9 @@ class LuminaPipeline:
                         ocr_text = self._latest_ocr_text
 
                 annotated = self._annotate_frame(frame, detections, ocr_text)
-                self._handle_speech(detections, ocr_text)
+                self._handle_ultrasonic_alert()
+                if not self.ultrasonic.close_obstacle_confirmed():
+                    self._handle_speech(detections, ocr_text)
 
                 if self.config.save_debug_frames and self._frame_index % 30 == 0:
                     file_path = debug_dir / f"frame_{self._frame_index:06d}.jpg"
@@ -126,6 +133,7 @@ class LuminaPipeline:
                         logger.info("Reenfoque manual solicitado.")
         finally:
             self.camera.stop()
+            self.ultrasonic.stop()
             self.speech.stop()
             if self.config.show_preview:
                 cv2.destroyAllWindows()
@@ -248,6 +256,24 @@ class LuminaPipeline:
             self._last_object_speech_at = now_monotonic()
             self._object_speech_gate.mark()
 
+    def _handle_ultrasonic_alert(self) -> None:
+        if not self.config.enable_tts or not self.config.enable_ultrasonic:
+            return
+        if not self.ultrasonic.close_obstacle_confirmed():
+            return
+        if not self._ultrasonic_speech_gate.ready():
+            return
+
+        distance = self.ultrasonic.latest_distance_cm
+        if distance is not None and distance <= 25:
+            message = "Cuidado. Hay un objeto demasiado cerca."
+        else:
+            message = "Cuidado. Hay un objeto muy cerca."
+
+        logger.info("Alerta ultrasonica: {}", message)
+        self.speech.speak(message)
+        self._ultrasonic_speech_gate.mark()
+
     def _objects_suppressed_by_ocr(self) -> bool:
         return (
             self._last_ocr_speech_at > 0
@@ -303,7 +329,8 @@ class LuminaPipeline:
             f"MODO={'LENTES' if self.config.wearable_mode else 'PRUEBA'} "
             f"OBJ={'ON' if self.config.enable_object_detection else 'OFF'} "
             f"OCR={'ON' if self.config.enable_ocr else 'OFF'} "
-            f"TTS={'ON' if self.config.enable_tts else 'OFF'}"
+            f"TTS={'ON' if self.config.enable_tts else 'OFF'} "
+            f"US={'ON' if self.config.enable_ultrasonic else 'OFF'}"
         )
         cv2.putText(
             annotated,
