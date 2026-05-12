@@ -28,8 +28,7 @@ def main() -> int:
     speech.start()
     speech.warmup_async(
         [
-            "Cuidado. Hay un objeto muy cerca.",
-            "Cuidado. Hay un objeto demasiado cerca.",
+            "Cuidado. Hay un objeto a 15 centimetros.",
         ],
     )
     if not ultrasonic.start():
@@ -46,7 +45,9 @@ def main() -> int:
                 print(f"[Lumina] Distancia: {distance:6.1f} cm")
 
             if ultrasonic.close_obstacle_confirmed() and gate.ready():
-                speech.speak("Cuidado. Hay un objeto muy cerca.", priority=True)
+                distance_cm = max(1, int(round(distance or config.ultrasonic_alert_distance_cm)))
+                unit = "centimetro" if distance_cm == 1 else "centimetros"
+                speech.speak(f"Cuidado. Hay un objeto a {distance_cm} {unit}.", priority=True)
                 gate.mark()
             time.sleep(config.ultrasonic_poll_interval_seconds)
     except KeyboardInterrupt:

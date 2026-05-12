@@ -156,7 +156,7 @@ LUMINA_ULTRASONIC_ALERT_DISTANCE_CM=15
 Mensaje de alerta:
 
 ```text
-Cuidado. Hay un objeto muy cerca.
+Cuidado. Hay un objeto a 12 centimetros.
 ```
 
 Si aparece `echo pin set high`, revisa `ECHO`, divisor de voltaje, GND comun y que `TRIG/ECHO` no esten invertidos.
