@@ -90,6 +90,7 @@ class AppConfig:
     ultrasonic_max_distance_m: float
     ultrasonic_alert_distance_cm: float
     ultrasonic_poll_interval_seconds: float
+    ultrasonic_confirm_seconds: float
     ultrasonic_alert_cooldown_seconds: float
     log_level: str
 
@@ -209,7 +210,11 @@ class AppConfig:
             ),
             ultrasonic_poll_interval_seconds=max(
                 0.05,
-                _env_float("LUMINA_ULTRASONIC_POLL_INTERVAL_SECONDS", 0.2),
+                _env_float("LUMINA_ULTRASONIC_POLL_INTERVAL_SECONDS", 0.3),
+            ),
+            ultrasonic_confirm_seconds=max(
+                0.0,
+                _env_float("LUMINA_ULTRASONIC_CONFIRM_SECONDS", 0.15),
             ),
             ultrasonic_alert_cooldown_seconds=max(
                 1.0,

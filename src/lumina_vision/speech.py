@@ -122,17 +122,27 @@ class SpeechEngine:
 
         logger.warning("No se encontro una voz explicita en espanol para pyttsx3.")
 
-    def speak(self, text: str) -> None:
+    def _clear_queue(self) -> None:
+        while True:
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except queue.Empty:
+                break
+
+    def speak(self, text: str, *, priority: bool = False) -> None:
         if not self._running or not text.strip():
             return
         clean_text = text.strip()
+        if priority:
+            self._clear_queue()
         while self._queue.qsize() >= self.config.speech_max_queue_size:
             try:
                 self._queue.get_nowait()
                 self._queue.task_done()
             except queue.Empty:
                 break
-        logger.info("Voz en cola: {}", clean_text)
+        logger.info("Voz en cola{}: {}", " prioritaria" if priority else "", clean_text)
         self._queue.put(clean_text)
 
     def _speak_with_espeak(self, text: str) -> None:

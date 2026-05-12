@@ -86,7 +86,7 @@ class UltrasonicMonitor:
             self._close_since = now
             return False
 
-        return (now - self._close_since) >= 0.35
+        return (now - self._close_since) >= self.config.ultrasonic_confirm_seconds
 
     def stop(self) -> None:
         self._running = False

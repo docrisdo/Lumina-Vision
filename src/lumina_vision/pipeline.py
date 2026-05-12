@@ -68,6 +68,8 @@ class LuminaPipeline:
             if self.config.tts_warmup:
                 self.speech.warmup_async(
                     [
+                        "Cuidado. Hay un objeto muy cerca.",
+                        "Cuidado. Hay un objeto demasiado cerca.",
                         "Veo una persona",
                         "Veo un libro",
                         "Veo una mochila",
@@ -271,7 +273,7 @@ class LuminaPipeline:
             message = "Cuidado. Hay un objeto muy cerca."
 
         logger.info("Alerta ultrasonica: {}", message)
-        self.speech.speak(message)
+        self.speech.speak(message, priority=True)
         self._ultrasonic_speech_gate.mark()
 
     def _objects_suppressed_by_ocr(self) -> bool:

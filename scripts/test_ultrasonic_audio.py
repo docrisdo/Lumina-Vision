@@ -26,6 +26,12 @@ def main() -> int:
     gate = CooldownGate(config.ultrasonic_alert_cooldown_seconds)
 
     speech.start()
+    speech.warmup_async(
+        [
+            "Cuidado. Hay un objeto muy cerca.",
+            "Cuidado. Hay un objeto demasiado cerca.",
+        ],
+    )
     if not ultrasonic.start():
         speech.stop()
         return 1
@@ -40,7 +46,7 @@ def main() -> int:
                 print(f"[Lumina] Distancia: {distance:6.1f} cm")
 
             if ultrasonic.close_obstacle_confirmed() and gate.ready():
-                speech.speak("Cuidado. Hay un objeto muy cerca.")
+                speech.speak("Cuidado. Hay un objeto muy cerca.", priority=True)
                 gate.mark()
             time.sleep(config.ultrasonic_poll_interval_seconds)
     except KeyboardInterrupt:
