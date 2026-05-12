@@ -16,6 +16,8 @@ sudo apt install -y \
   libespeak1 \
   ffmpeg
 
+sudo apt install -y python3-gpiozero
+
 echo "[Lumina] Preparando entorno virtual..."
 cd "$PROJECT_DIR"
 python3 -m venv .venv
