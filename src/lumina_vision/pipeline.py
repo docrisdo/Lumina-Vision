@@ -65,10 +65,12 @@ class LuminaPipeline:
 
         if self.config.enable_tts:
             self.speech.start()
+            if self.config.enable_ultrasonic:
+                logger.info("Preparando frases de alerta ultrasonica.")
+                self.speech.warmup(self._ultrasonic_warmup_phrases())
             if self.config.tts_warmup:
                 self.speech.warmup_async(
                     [
-                        "Cuidado. Hay un objeto a 15 centimetros.",
                         "Veo una persona",
                         "Veo un libro",
                         "Veo una mochila",
@@ -279,6 +281,13 @@ class LuminaPipeline:
         distance_cm = max(1, int(round(distance)))
         unit = "centimetro" if distance_cm == 1 else "centimetros"
         return f"Cuidado. Hay un objeto a {distance_cm} {unit}."
+
+    def _ultrasonic_warmup_phrases(self) -> list[str]:
+        max_cm = max(1, int(round(self.config.ultrasonic_alert_distance_cm)))
+        return [
+            f"Cuidado. Hay un objeto a {distance_cm} {'centimetro' if distance_cm == 1 else 'centimetros'}."
+            for distance_cm in range(1, max_cm + 1)
+        ]
 
     def _objects_suppressed_by_ocr(self) -> bool:
         return (

@@ -16,6 +16,11 @@ from lumina_vision.ultrasonic import UltrasonicMonitor
 from lumina_vision.utils import CooldownGate
 
 
+def _alert_phrase(distance_cm: int) -> str:
+    unit = "centimetro" if distance_cm == 1 else "centimetros"
+    return f"Cuidado. Hay un objeto a {distance_cm} {unit}."
+
+
 def main() -> int:
     config = AppConfig.load()
     config.enable_ultrasonic = True
@@ -26,11 +31,9 @@ def main() -> int:
     gate = CooldownGate(config.ultrasonic_alert_cooldown_seconds)
 
     speech.start()
-    speech.warmup_async(
-        [
-            "Cuidado. Hay un objeto a 15 centimetros.",
-        ],
-    )
+    max_cm = max(1, int(round(config.ultrasonic_alert_distance_cm)))
+    print("[Lumina] Preparando frases de alerta para que salgan rapido...")
+    speech.warmup([_alert_phrase(distance_cm) for distance_cm in range(1, max_cm + 1)])
     if not ultrasonic.start():
         speech.stop()
         return 1
@@ -46,8 +49,8 @@ def main() -> int:
 
             if ultrasonic.close_obstacle_confirmed() and gate.ready():
                 distance_cm = max(1, int(round(distance or config.ultrasonic_alert_distance_cm)))
-                unit = "centimetro" if distance_cm == 1 else "centimetros"
-                speech.speak(f"Cuidado. Hay un objeto a {distance_cm} {unit}.", priority=True)
+                distance_cm = min(distance_cm, max_cm)
+                speech.speak(_alert_phrase(distance_cm), priority=True)
                 gate.mark()
             time.sleep(config.ultrasonic_poll_interval_seconds)
     except KeyboardInterrupt:
