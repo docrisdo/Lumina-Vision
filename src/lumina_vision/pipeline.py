@@ -66,8 +66,8 @@ class LuminaPipeline:
         if self.config.enable_tts:
             self.speech.start()
             if self.config.enable_ultrasonic:
-                logger.info("Preparando frases de alerta ultrasonica.")
-                self.speech.warmup(self._ultrasonic_warmup_phrases())
+                logger.info("Preparando frases de alerta ultrasonica en segundo plano.")
+                self.speech.warmup_async(self._ultrasonic_warmup_phrases())
             if self.config.tts_warmup:
                 self.speech.warmup_async(
                     [

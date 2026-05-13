@@ -163,7 +163,7 @@ class AppConfig:
             tts_warmup=_env_bool("LUMINA_TTS_WARMUP", False),
             tts_command_timeout_seconds=max(
                 2.0,
-                _env_float("LUMINA_TTS_COMMAND_TIMEOUT_SECONDS", 8.0),
+                _env_float("LUMINA_TTS_COMMAND_TIMEOUT_SECONDS", 15.0),
             ),
             piper_model_path=Path(
                 _env_str(

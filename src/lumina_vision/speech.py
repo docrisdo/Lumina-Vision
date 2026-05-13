@@ -89,7 +89,10 @@ class SpeechEngine:
         if self._engine_name != "piper":
             return
         for phrase in phrases:
-            self._ensure_piper_audio(phrase.strip())
+            try:
+                self._ensure_piper_audio(phrase.strip())
+            except Exception as exc:
+                logger.warning("No se pudo precalentar frase TTS '{}': {}", phrase, exc)
 
     def warmup_async(self, phrases: list[str]) -> None:
         thread = threading.Thread(
@@ -220,20 +223,24 @@ class SpeechEngine:
         if cached_output.exists():
             return cached_output
 
-        result = subprocess.run(
-            [
-                "piper",
-                "--model",
-                str(self.config.piper_model_path),
-                "--output_file",
-                str(cached_output),
-            ],
-            input=text,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=self.config.tts_command_timeout_seconds,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "piper",
+                    "--model",
+                    str(self.config.piper_model_path),
+                    "--output_file",
+                    str(cached_output),
+                ],
+                input=text,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self.config.tts_command_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("Piper tardo demasiado generando audio para: {}", text)
+            return None
         if result.returncode != 0:
             logger.warning("Piper fallo: {}", result.stderr.strip())
             return None

@@ -32,8 +32,8 @@ def main() -> int:
 
     speech.start()
     max_cm = max(1, int(round(config.ultrasonic_alert_distance_cm)))
-    print("[Lumina] Preparando frases de alerta para que salgan rapido...")
-    speech.warmup([_alert_phrase(distance_cm) for distance_cm in range(1, max_cm + 1)])
+    print("[Lumina] Preparando frases de alerta en segundo plano...")
+    speech.warmup_async([_alert_phrase(distance_cm) for distance_cm in range(1, max_cm + 1)])
     if not ultrasonic.start():
         speech.stop()
         return 1
