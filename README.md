@@ -48,6 +48,40 @@ cp .env.example .env
 nano .env
 ```
 
+## Librerias Utilizadas
+
+Dependencias principales de Python:
+
+- `numpy`: manejo de arreglos e imagenes para OCR y deteccion.
+- `opencv-python` (`cv2`): captura/preview, procesamiento de imagenes, recortes, nitidez, binarizacion y anotaciones visuales.
+- `pillow`: soporte general para imagenes y compatibilidad con utilidades de vision.
+- `python-dotenv`: carga de configuracion desde `.env`.
+- `loguru`: logs claros del sistema, camara, OCR, voz y sensores.
+- `pytesseract`: conexion entre Python y Tesseract OCR para extraer texto de hojas/libros.
+- `pyttsx3`: motor TTS alternativo si Piper o `espeak-ng` no estan disponibles.
+- `requests`: descarga de modelos y assets desde scripts de instalacion.
+- `gpiozero`: lectura del sensor ultrasonico HC-SR04 en Raspberry Pi.
+
+Dependencias del sistema en Raspberry:
+
+- `python3-picamera2` y `python3-libcamera`: control de la camara IMX708 y autofocus.
+- `tesseract-ocr` y `tesseract-ocr-spa`: motor OCR y paquete de idioma espanol.
+- `piper-tts`: voz local mas natural en espanol.
+- `espeak-ng`: voz alternativa y respaldo si Piper no esta disponible.
+- `pulseaudio-utils`, `aplay`/`paplay`: reproduccion de audio por audifonos o bocina.
+- `ffmpeg`: soporte auxiliar de audio/multimedia.
+- `tflite_runtime`, `ai-edge-litert` o `tensorflow.lite`: runtime para modelos TFLite de deteccion de objetos.
+
+Librerias estandar de Python usadas internamente:
+
+- `threading` y `queue`: OCR, voz y ultrasonico en hilos separados para no bloquear el programa.
+- `subprocess` y `shutil`: ejecucion de Piper, `espeak-ng`, `aplay`/`paplay` y validacion de comandos.
+- `time`: cooldowns, intervalos y mediciones.
+- `pathlib`, `os`, `sys`: manejo de rutas, entorno y arranque de scripts.
+- `dataclasses`: estructuras de configuracion y resultados.
+- `re`: limpieza y validacion de texto OCR.
+- `hashlib`: cache de audios generados por Piper.
+
 ## Ejecucion Recomendada
 
 Modo lectura con OCR, voz y ultrasonico:
