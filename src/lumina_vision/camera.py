@@ -167,12 +167,22 @@ class CameraManager:
                     frame = cv2.flip(frame, 1)
                 if self.config.camera_vflip:
                     frame = cv2.flip(frame, 0)
-                return frame
+                return self._apply_rotation(frame)
 
             ok, frame = self._camera.read()
             if not ok:
                 raise RuntimeError("No se pudo leer un frame de la camara.")
-            return frame
+            return self._apply_rotation(frame)
+
+    def _apply_rotation(self, frame: Any) -> Any:
+        rotation = self.config.camera_rotation % 360
+        if rotation == 90:
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        if rotation == 180:
+            return cv2.rotate(frame, cv2.ROTATE_180)
+        if rotation == 270:
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
 
     def refocus(self, *, force: bool = False) -> None:
         if self._backend != "picamera2" or self._camera is None:

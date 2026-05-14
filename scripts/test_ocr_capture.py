@@ -26,6 +26,7 @@ def _configure_for_page_test(config: AppConfig) -> None:
     config.camera_focus_settle_seconds = max(config.camera_focus_settle_seconds, 0.8)
     config.ocr_max_width = 1536
     config.ocr_page_mode = True
+    config.ocr_fast_mode = True
 
 
 def _sharpness_label(sharpness: float) -> tuple[str, tuple[int, int, int]]:
@@ -56,10 +57,7 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         frame = camera.read()
         preview = frame.copy()
         height, width = preview.shape[:2]
-        page_x1 = int(width * 0.22)
-        page_x2 = int(width * 0.78)
-        page_y1 = int(height * 0.06)
-        page_y2 = int(height * 0.94)
+        page_x1, page_y1, page_x2, page_y2 = ocr.roi_box(frame)
         live_sharpness = ocr.sharpness(ocr._center_crop(frame))
         focus_text, focus_color = _sharpness_label(live_sharpness)
         cv2.rectangle(
@@ -91,7 +89,7 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         )
         cv2.putText(
             preview,
-            "La hoja debe llenar el rectangulo, no toda la pantalla.",
+            "Solo se procesa el rectangulo amarillo. Evita pantalla/reflejos/fondo.",
             (20, height - 20),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
@@ -108,6 +106,10 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         if key == 32:
             camera.autofocus_cycle()
             frame, sharpness = _best_sharp_frame(camera, ocr)
+            if sharpness < 35:
+                print(f"[Lumina] Captura borrosa: nitidez={sharpness:.1f}. No conviene procesar OCR.")
+                print("[Lumina] Acerca/aleja la hoja, mejora luz y vuelve a presionar F.")
+                continue
             print(f"[Lumina] Captura elegida con nitidez: {sharpness:.1f}")
             return frame
 

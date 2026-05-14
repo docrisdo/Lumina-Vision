@@ -40,11 +40,20 @@ class OCRService:
 
     def _center_crop(self, frame: np.ndarray) -> np.ndarray:
         height, width = frame.shape[:2]
-        x1 = int(width * 0.04)
-        x2 = int(width * 0.96)
-        y1 = int(height * 0.08)
-        y2 = int(height * 0.92)
+        x1 = int(width * self.config.ocr_roi_x1)
+        x2 = int(width * self.config.ocr_roi_x2)
+        y1 = int(height * self.config.ocr_roi_y1)
+        y2 = int(height * self.config.ocr_roi_y2)
         return frame[y1:y2, x1:x2]
+
+    def roi_box(self, frame: np.ndarray) -> tuple[int, int, int, int]:
+        height, width = frame.shape[:2]
+        return (
+            int(width * self.config.ocr_roi_x1),
+            int(height * self.config.ocr_roi_y1),
+            int(width * self.config.ocr_roi_x2),
+            int(height * self.config.ocr_roi_y2),
+        )
 
     def _order_points(self, points: np.ndarray) -> np.ndarray:
         rect = np.zeros((4, 2), dtype="float32")
@@ -131,13 +140,12 @@ class OCRService:
 
     def _preprocess_variants(self, frame: np.ndarray) -> list[np.ndarray]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.resize(gray, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         gray = cv2.bilateralFilter(gray, 5, 50, 50)
 
         sharpened = cv2.addWeighted(gray, 1.8, cv2.GaussianBlur(gray, (0, 0), 1.2), -0.8, 0)
-        denoised = cv2.fastNlMeansDenoising(sharpened, None, 10, 7, 21)
         otsu = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         adaptive = cv2.adaptiveThreshold(
             sharpened,
@@ -147,14 +155,15 @@ class OCRService:
             31,
             11,
         )
+        if self.config.ocr_fast_mode:
+            return [otsu, adaptive, sharpened]
         adaptive_inv = cv2.bitwise_not(adaptive)
-
+        denoised = cv2.fastNlMeansDenoising(sharpened, None, 10, 7, 21)
         return [otsu, adaptive, adaptive_inv, sharpened, denoised, gray]
 
     def _preprocess_page_variants(self, frame: np.ndarray) -> list[np.ndarray]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.fastNlMeansDenoising(gray, None, 8, 7, 21)
+        gray = cv2.resize(gray, None, fx=1.4, fy=1.4, interpolation=cv2.INTER_CUBIC)
         clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
         contrast = clahe.apply(gray)
         sharpened = cv2.addWeighted(contrast, 1.5, cv2.GaussianBlur(contrast, (0, 0), 1.0), -0.5, 0)
@@ -167,6 +176,8 @@ class OCRService:
             41,
             15,
         )
+        if self.config.ocr_fast_mode:
+            return [otsu, adaptive]
         return [otsu, adaptive, sharpened, contrast]
 
     def best_debug_variant(self, frame: np.ndarray) -> np.ndarray:
@@ -248,7 +259,7 @@ class OCRService:
             lang=self.config.ocr_language,
             config=self._ocr_config(psm),
             output_type=Output.DICT,
-            timeout=4,
+            timeout=2 if self.config.ocr_fast_mode else 4,
         )
         words: list[str] = []
         confidences: list[float] = []
@@ -274,7 +285,7 @@ class OCRService:
             lang=self.config.ocr_language,
             config=self._ocr_config(psm),
             output_type=Output.DICT,
-            timeout=6,
+            timeout=3 if self.config.ocr_fast_mode else 6,
         )
         lines: dict[tuple[int, int, int], list[str]] = {}
         confidences: list[float] = []
@@ -304,10 +315,16 @@ class OCRService:
 
     def _extract_page_text(self, region: np.ndarray, source: str) -> list[OCRCandidate]:
         candidates: list[OCRCandidate] = []
-        for rotated in (self._rotate(region, 0), self._rotate(region, -1.5), self._rotate(region, 1.5)):
+        rotations = (self._rotate(region, 0),) if self.config.ocr_fast_mode else (
+            self._rotate(region, 0),
+            self._rotate(region, -1.5),
+            self._rotate(region, 1.5),
+        )
+        psms = (6,) if self.config.ocr_fast_mode else (6, 4, 3)
+        for rotated in rotations:
             variants = self._preprocess_page_variants(rotated)
             for variant in variants:
-                for psm in (6, 4, 3):
+                for psm in psms:
                     text, confidence = self._text_lines_from_data(variant, psm)
                     if self._word_count(text) >= 5 and self._looks_like_text(text):
                         candidates.append(OCRCandidate(text, confidence, 3, source))
@@ -317,13 +334,14 @@ class OCRService:
 
     def _extract_large_text(self, variants: list[np.ndarray], source: str) -> OCRCandidate | None:
         best: OCRCandidate | None = None
+        psms = (7, 8) if self.config.ocr_fast_mode else (8, 7, 13)
         for variant in variants:
-            for psm in (8, 7, 13):
+            for psm in psms:
                 text = pytesseract.image_to_string(
                     variant,
                     lang=self.config.ocr_language,
                     config=self._ocr_config(psm, large_text=True),
-                    timeout=2,
+                    timeout=1 if self.config.ocr_fast_mode else 2,
                 )
                 cleaned = self._clean_large_text_candidate(clean_ocr_text(text))
                 letters = sum(char.isalpha() for char in cleaned)
@@ -338,8 +356,9 @@ class OCRService:
 
     def _extract_regular_text(self, variants: list[np.ndarray], source: str) -> list[OCRCandidate]:
         candidates: list[OCRCandidate] = []
+        psms = (6,) if self.config.ocr_fast_mode else (6, 11, 4)
         for variant in variants:
-            for psm in (6, 11, 4):
+            for psm in psms:
                 cleaned, confidence = self._text_from_data(variant, psm)
                 if len(cleaned) >= self.config.ocr_min_text_length and self._looks_like_text(cleaned):
                     candidates.append(OCRCandidate(cleaned, confidence, 1, source))
@@ -358,7 +377,12 @@ class OCRService:
                 if candidates:
                     break
 
-            for rotation_index, rotated in enumerate((self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0))):
+            rotations = (self._rotate(region, 0),) if self.config.ocr_fast_mode else (
+                self._rotate(region, 0),
+                self._rotate(region, -2.0),
+                self._rotate(region, 2.0),
+            )
+            for rotation_index, rotated in enumerate(rotations):
                 variants = self._preprocess_variants(rotated)
                 large_text = self._extract_large_text(variants, source)
                 if large_text is not None:

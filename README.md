@@ -125,6 +125,24 @@ LUMINA_CAMERA_LENS_POSITION=4.5
 
 Pon ese valor en `.env`. Para lectura, una hoja/libro debe estar estable, bien iluminado y llenar la mayor parte del rectangulo de guia. Si el texto se ve borroso en `debug_ocr_calibration/best_ocr_original.jpg`, el OCR no va a leer bien aunque Tesseract este instalado.
 
+Si el modulo quedo girado en los lentes, corrige la orientacion por software:
+
+```env
+LUMINA_CAMERA_ROTATION=0
+```
+
+Valores validos: `0`, `90`, `180`, `270`.
+
+El OCR solo procesa el rectangulo amarillo para evitar basura del fondo:
+
+```env
+LUMINA_OCR_ROI_X1=0.22
+LUMINA_OCR_ROI_Y1=0.06
+LUMINA_OCR_ROI_X2=0.78
+LUMINA_OCR_ROI_Y2=0.94
+LUMINA_OCR_FAST_MODE=true
+```
+
 Para probar una hoja o libro:
 
 ```bash

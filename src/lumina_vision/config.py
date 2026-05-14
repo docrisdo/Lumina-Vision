@@ -40,6 +40,7 @@ class AppConfig:
     camera_af_speed: str
     camera_lens_position: float
     camera_color_mode: str
+    camera_rotation: int
     camera_refocus_before_ocr: bool
     camera_refocus_interval_seconds: float
     camera_focus_settle_seconds: float
@@ -67,6 +68,11 @@ class AppConfig:
     ocr_min_sharpness: float
     ocr_stable_reads: int
     ocr_prefer_center_crop: bool
+    ocr_roi_x1: float
+    ocr_roi_y1: float
+    ocr_roi_x2: float
+    ocr_roi_y2: float
+    ocr_fast_mode: bool
     ocr_suppress_objects_seconds: float
     tts_engine: str
     tts_output: str
@@ -110,6 +116,7 @@ class AppConfig:
             camera_af_speed=_env_str("LUMINA_CAMERA_AF_SPEED", "fast"),
             camera_lens_position=_env_float("LUMINA_CAMERA_LENS_POSITION", -1.0),
             camera_color_mode=_env_str("LUMINA_CAMERA_COLOR_MODE", "none"),
+            camera_rotation=_env_int("LUMINA_CAMERA_ROTATION", 0),
             camera_refocus_before_ocr=_env_bool("LUMINA_CAMERA_REFOCUS_BEFORE_OCR", True),
             camera_refocus_interval_seconds=max(
                 1.0,
@@ -154,6 +161,11 @@ class AppConfig:
             ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 0.0)),
             ocr_stable_reads=max(1, _env_int("LUMINA_OCR_STABLE_READS", 1)),
             ocr_prefer_center_crop=_env_bool("LUMINA_OCR_PREFER_CENTER_CROP", True),
+            ocr_roi_x1=min(0.45, max(0.0, _env_float("LUMINA_OCR_ROI_X1", 0.22))),
+            ocr_roi_y1=min(0.45, max(0.0, _env_float("LUMINA_OCR_ROI_Y1", 0.06))),
+            ocr_roi_x2=max(0.55, min(1.0, _env_float("LUMINA_OCR_ROI_X2", 0.78))),
+            ocr_roi_y2=max(0.55, min(1.0, _env_float("LUMINA_OCR_ROI_Y2", 0.94))),
+            ocr_fast_mode=_env_bool("LUMINA_OCR_FAST_MODE", True),
             ocr_suppress_objects_seconds=max(
                 0.0,
                 _env_float("LUMINA_OCR_SUPPRESS_OBJECTS_SECONDS", 4.0),
