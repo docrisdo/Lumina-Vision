@@ -158,6 +158,7 @@ class SpeechEngine:
             thread = threading.Thread(
                 target=self._speak_with_espeak,
                 args=(clean_text,),
+                kwargs={"rate": self.config.ultrasonic_speech_rate},
                 name="lumina-urgent-tts",
                 daemon=True,
             )
@@ -167,14 +168,15 @@ class SpeechEngine:
 
         self.speak(clean_text, priority=True)
 
-    def _speak_with_espeak(self, text: str) -> None:
+    def _speak_with_espeak(self, text: str, *, rate: int | None = None) -> None:
         amplitude = max(0, min(200, int(self.config.speech_volume * 200)))
+        speech_rate = self.config.speech_rate if rate is None else rate
         base_cmd = [
             "espeak-ng",
             "-v",
             "es",
             "-s",
-            str(self.config.speech_rate),
+            str(speech_rate),
             "-a",
             str(amplitude),
         ]

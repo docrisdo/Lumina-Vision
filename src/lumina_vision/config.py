@@ -92,6 +92,7 @@ class AppConfig:
     ultrasonic_poll_interval_seconds: float
     ultrasonic_confirm_seconds: float
     ultrasonic_alert_cooldown_seconds: float
+    ultrasonic_speech_rate: int
     log_level: str
 
     @classmethod
@@ -219,6 +220,10 @@ class AppConfig:
             ultrasonic_alert_cooldown_seconds=max(
                 1.0,
                 _env_float("LUMINA_ULTRASONIC_ALERT_COOLDOWN_SECONDS", 3.0),
+            ),
+            ultrasonic_speech_rate=max(
+                120,
+                _env_int("LUMINA_ULTRASONIC_SPEECH_RATE", 260),
             ),
             log_level=_env_str("LUMINA_LOG_LEVEL", "INFO"),
         )
