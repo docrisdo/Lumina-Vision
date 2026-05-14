@@ -148,6 +148,25 @@ class SpeechEngine:
         logger.info("Voz en cola{}: {}", " prioritaria" if priority else "", clean_text)
         self._queue.put(clean_text)
 
+    def speak_alert(self, text: str) -> None:
+        if not self._running or not text.strip():
+            return
+
+        clean_text = text.strip()
+        self._clear_queue()
+        if shutil.which("espeak-ng"):
+            thread = threading.Thread(
+                target=self._speak_with_espeak,
+                args=(clean_text,),
+                name="lumina-urgent-tts",
+                daemon=True,
+            )
+            thread.start()
+            logger.info("Voz urgente con espeak-ng: {}", clean_text)
+            return
+
+        self.speak(clean_text, priority=True)
+
     def _speak_with_espeak(self, text: str) -> None:
         amplitude = max(0, min(200, int(self.config.speech_volume * 200)))
         base_cmd = [

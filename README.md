@@ -206,7 +206,7 @@ bash scripts/download_piper_spanish_voice.sh
 python scripts/test_audio.py
 ```
 
-La app usa cache de frases para que avisos repetidos salgan mas rapido. Las alertas del ultrasonico tienen prioridad sobre OCR/objetos.
+La app usa cache de frases para que avisos repetidos salgan mas rapido. Las alertas del ultrasonico tienen prioridad sobre OCR/objetos y usan una ruta rapida con `espeak-ng` para evitar esperas de Piper.
 
 ## Objetos Escolares
 

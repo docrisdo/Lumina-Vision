@@ -32,8 +32,6 @@ def main() -> int:
 
     speech.start()
     max_cm = max(1, int(round(config.ultrasonic_alert_distance_cm)))
-    print("[Lumina] Preparando frases de alerta en segundo plano...")
-    speech.warmup_async([_alert_phrase(distance_cm) for distance_cm in range(1, max_cm + 1)])
     if not ultrasonic.start():
         speech.stop()
         return 1
@@ -50,7 +48,7 @@ def main() -> int:
             if ultrasonic.close_obstacle_confirmed() and gate.ready():
                 distance_cm = max(1, int(round(distance or config.ultrasonic_alert_distance_cm)))
                 distance_cm = min(distance_cm, max_cm)
-                speech.speak(_alert_phrase(distance_cm), priority=True)
+                speech.speak_alert(_alert_phrase(distance_cm))
                 gate.mark()
             time.sleep(config.ultrasonic_poll_interval_seconds)
     except KeyboardInterrupt:
