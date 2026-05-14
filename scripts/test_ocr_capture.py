@@ -138,30 +138,34 @@ def main() -> int:
             frame = camera.read()
         else:
             frame = _preview_capture(camera, ocr)
-        cv2.imwrite(str(debug_dir / "ocr_original.jpg"), frame)
-        for index, variant in enumerate(ocr._preprocess_variants(ocr._center_crop(frame))):
-            cv2.imwrite(str(debug_dir / f"ocr_variant_{index}.jpg"), variant)
-        for index, variant in enumerate(ocr._preprocess_page_variants(ocr._center_crop(frame))):
-            cv2.imwrite(str(debug_dir / f"ocr_page_variant_{index}.jpg"), variant)
-        cv2.imwrite(str(debug_dir / "ocr_best_for_tesseract.jpg"), ocr.best_debug_variant(frame))
+        for name, image in ocr.debug_variants(frame).items():
+            cv2.imwrite(str(debug_dir / f"{name}.jpg"), image)
 
+        candidates, sharpness = ocr.extract_candidates(frame)
         result = ocr.extract_text(frame)
         if result is None:
             print("[Lumina] OCR no detecto texto util.")
             print(f"[Lumina] Imagen guardada en: {debug_dir / 'ocr_original.jpg'}")
-            print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_variant_*.jpg'}")
-            print(f"[Lumina] Variantes de pagina guardadas en: {debug_dir / 'ocr_page_variant_*.jpg'}")
+            print(f"[Lumina] Nitidez: {sharpness:.1f}")
+            print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_*_variant_*.jpg'}")
+            print(f"[Lumina] Regiones guardadas en: {debug_dir / 'ocr_region_*.jpg'}")
             print(f"[Lumina] Mejor variante guardada en: {debug_dir / 'ocr_best_for_tesseract.jpg'}")
             print("[Lumina] Prueba con hoja bien iluminada, centrada, a 25-45 cm y sin moverla.")
-            print('[Lumina] Diagnostico pagina: tesseract debug_ocr/ocr_page_variant_0.jpg stdout -l spa+eng --psm 6')
+            print("[Lumina] Diagnostico pagina: tesseract debug_ocr/ocr_best_for_tesseract.jpg stdout -l spa+eng --psm 6")
             return 1
 
         print("[Lumina] OCR detecto:")
         print(result.text)
         print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
+        print("[Lumina] Mejores candidatos:")
+        for index, candidate in enumerate(candidates[:5], start=1):
+            print(
+                f"  {index}. fuente={candidate.source} prioridad={candidate.priority} "
+                f"conf={candidate.confidence_hint:.1f}: {candidate.text[:120]}",
+            )
         print(f"[Lumina] Imagen guardada en: {debug_dir / 'ocr_original.jpg'}")
-        print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_variant_*.jpg'}")
-        print(f"[Lumina] Variantes de pagina guardadas en: {debug_dir / 'ocr_page_variant_*.jpg'}")
+        print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_*_variant_*.jpg'}")
+        print(f"[Lumina] Regiones guardadas en: {debug_dir / 'ocr_region_*.jpg'}")
         print(f"[Lumina] Mejor variante guardada en: {debug_dir / 'ocr_best_for_tesseract.jpg'}")
         return 0
     finally:

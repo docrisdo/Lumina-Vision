@@ -104,6 +104,27 @@ bash scripts/run_preview.sh
 
 ## OCR Y Lectura De Paginas
 
+Primero calibra OCR con un texto grande y conocido:
+
+```bash
+source .venv/bin/activate
+python scripts/calibrate_ocr.py --expected HOLA
+```
+
+Cuando eso funcione, calibra con una frase de una hoja real:
+
+```bash
+python scripts/calibrate_ocr.py --expected "El patito feo"
+```
+
+El script prueba varias posiciones de lente y al final muestra un valor como:
+
+```env
+LUMINA_CAMERA_LENS_POSITION=4.5
+```
+
+Pon ese valor en `.env`. Para lectura, una hoja/libro debe estar estable, bien iluminado y llenar la mayor parte del rectangulo de guia. Si el texto se ve borroso en `debug_ocr_calibration/best_ocr_original.jpg`, el OCR no va a leer bien aunque Tesseract este instalado.
+
 Para probar una hoja o libro:
 
 ```bash
@@ -122,7 +143,8 @@ Archivos de diagnostico:
 
 - `debug_ocr/ocr_original.jpg`: captura cruda.
 - `debug_ocr/ocr_best_for_tesseract.jpg`: variante para texto grande.
-- `debug_ocr/ocr_page_variant_*.jpg`: variantes para lectura de pagina.
+- `debug_ocr/ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo recorte automatico de documento si se detecta.
+- `debug_ocr/ocr_*_page_variant_*.jpg`: variantes para lectura de pagina.
 
 Si el texto se ve borroso en la ventana, el OCR no va a leer bien. Primero calibra enfoque.
 

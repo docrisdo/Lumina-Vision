@@ -19,6 +19,14 @@ class OCRResult:
     sharpness: float
 
 
+@dataclass(slots=True)
+class OCRCandidate:
+    text: str
+    confidence_hint: float
+    priority: int
+    source: str
+
+
 class OCRService:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -37,6 +45,72 @@ class OCRService:
         y1 = int(height * 0.08)
         y2 = int(height * 0.92)
         return frame[y1:y2, x1:x2]
+
+    def _order_points(self, points: np.ndarray) -> np.ndarray:
+        rect = np.zeros((4, 2), dtype="float32")
+        sums = points.sum(axis=1)
+        diffs = np.diff(points, axis=1)
+        rect[0] = points[np.argmin(sums)]
+        rect[2] = points[np.argmax(sums)]
+        rect[1] = points[np.argmin(diffs)]
+        rect[3] = points[np.argmax(diffs)]
+        return rect
+
+    def _four_point_transform(self, frame: np.ndarray, points: np.ndarray) -> np.ndarray:
+        rect = self._order_points(points.reshape(4, 2).astype("float32"))
+        top_left, top_right, bottom_right, bottom_left = rect
+        width_a = np.linalg.norm(bottom_right - bottom_left)
+        width_b = np.linalg.norm(top_right - top_left)
+        height_a = np.linalg.norm(top_right - bottom_right)
+        height_b = np.linalg.norm(top_left - bottom_left)
+        max_width = max(1, int(max(width_a, width_b)))
+        max_height = max(1, int(max(height_a, height_b)))
+        destination = np.array(
+            [
+                [0, 0],
+                [max_width - 1, 0],
+                [max_width - 1, max_height - 1],
+                [0, max_height - 1],
+            ],
+            dtype="float32",
+        )
+        matrix = cv2.getPerspectiveTransform(rect, destination)
+        return cv2.warpPerspective(frame, matrix, (max_width, max_height))
+
+    def _document_crop(self, frame: np.ndarray) -> np.ndarray | None:
+        height, width = frame.shape[:2]
+        area = float(height * width)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(gray, 60, 180)
+        edges = cv2.dilate(edges, np.ones((5, 5), np.uint8), iterations=1)
+        contours, _hierarchy = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:6]
+        for contour in contours:
+            contour_area = cv2.contourArea(contour)
+            if contour_area < area * 0.18:
+                continue
+            perimeter = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, 0.03 * perimeter, True)
+            if len(approx) == 4:
+                warped = self._four_point_transform(frame, approx)
+                warped_height, warped_width = warped.shape[:2]
+                if warped_width >= 220 and warped_height >= 220:
+                    return warped
+        return None
+
+    def _ocr_regions(self, frame: np.ndarray) -> list[tuple[str, np.ndarray]]:
+        regions: list[tuple[str, np.ndarray]] = []
+        document = self._document_crop(frame)
+        if document is not None:
+            regions.append(("documento", document))
+        center = self._center_crop(frame)
+        regions.append(("centro", center))
+        if not self.config.ocr_prefer_center_crop:
+            regions.insert(0, ("frame", frame))
+        else:
+            regions.append(("frame", frame))
+        return regions
 
     def sharpness(self, frame: np.ndarray) -> float:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -228,21 +302,21 @@ class OCRService:
         text = clean_ocr_text(". ".join(ordered_lines))
         return text, float(np.mean(confidences)) if confidences else 0.0
 
-    def _extract_page_text(self, region: np.ndarray) -> list[tuple[str, float, int]]:
-        candidates: list[tuple[str, float, int]] = []
+    def _extract_page_text(self, region: np.ndarray, source: str) -> list[OCRCandidate]:
+        candidates: list[OCRCandidate] = []
         for rotated in (self._rotate(region, 0), self._rotate(region, -1.5), self._rotate(region, 1.5)):
             variants = self._preprocess_page_variants(rotated)
             for variant in variants:
                 for psm in (6, 4, 3):
                     text, confidence = self._text_lines_from_data(variant, psm)
                     if self._word_count(text) >= 5 and self._looks_like_text(text):
-                        candidates.append((text, confidence, 3))
+                        candidates.append(OCRCandidate(text, confidence, 3, source))
             if candidates:
                 break
         return candidates
 
-    def _extract_large_text(self, variants: list[np.ndarray]) -> tuple[str, float, int] | None:
-        best: tuple[str, float, int] | None = None
+    def _extract_large_text(self, variants: list[np.ndarray], source: str) -> OCRCandidate | None:
+        best: OCRCandidate | None = None
         for variant in variants:
             for psm in (8, 7, 13):
                 text = pytesseract.image_to_string(
@@ -258,48 +332,66 @@ class OCRService:
                 if not self._looks_like_text(cleaned):
                     continue
                 score = float(letters * 10 + len(cleaned))
-                if best is None or score > best[1]:
-                    best = (cleaned, score, 2)
+                if best is None or score > best.confidence_hint:
+                    best = OCRCandidate(cleaned, score, 2, source)
         return best
 
-    def _extract_regular_text(self, variants: list[np.ndarray]) -> list[tuple[str, float, int]]:
-        candidates: list[tuple[str, float, int]] = []
+    def _extract_regular_text(self, variants: list[np.ndarray], source: str) -> list[OCRCandidate]:
+        candidates: list[OCRCandidate] = []
         for variant in variants:
             for psm in (6, 11, 4):
                 cleaned, confidence = self._text_from_data(variant, psm)
                 if len(cleaned) >= self.config.ocr_min_text_length and self._looks_like_text(cleaned):
-                    candidates.append((cleaned, confidence, 1))
+                    candidates.append(OCRCandidate(cleaned, confidence, 1, source))
         return candidates
 
-    def extract_text(self, frame: np.ndarray) -> OCRResult | None:
-        candidates: list[tuple[str, float, int]] = []
+    def extract_candidates(self, frame: np.ndarray) -> tuple[list[OCRCandidate], float]:
+        candidates: list[OCRCandidate] = []
         frame = self._limit_width(frame)
         frame_sharpness = self.sharpness(frame)
         if frame_sharpness < self.config.ocr_min_sharpness:
-            return None
+            return candidates, frame_sharpness
 
-        regions = [self._center_crop(frame), frame] if self.config.ocr_prefer_center_crop else [frame]
-        for region in regions:
+        for source, region in self._ocr_regions(frame):
             if self.config.ocr_page_mode:
-                candidates.extend(self._extract_page_text(region))
+                candidates.extend(self._extract_page_text(region, source))
                 if candidates:
                     break
 
             for rotation_index, rotated in enumerate((self._rotate(region, 0), self._rotate(region, -2.0), self._rotate(region, 2.0))):
                 variants = self._preprocess_variants(rotated)
-                large_text = self._extract_large_text(variants)
+                large_text = self._extract_large_text(variants, source)
                 if large_text is not None:
                     candidates.append(large_text)
-                candidates.extend(self._extract_regular_text(variants[:4]))
+                candidates.extend(self._extract_regular_text(variants[:4], source))
 
                 if candidates and rotation_index == 0:
                     break
             if candidates:
                 break
 
+        candidates.sort(
+            key=lambda item: (item.priority, *self._score_text(item.text), item.confidence_hint),
+            reverse=True,
+        )
+        return candidates, frame_sharpness
+
+    def debug_variants(self, frame: np.ndarray) -> dict[str, np.ndarray]:
+        frame = self._limit_width(frame)
+        debug: dict[str, np.ndarray] = {"ocr_original": frame}
+        for source, region in self._ocr_regions(frame):
+            debug[f"ocr_region_{source}"] = region
+            for index, variant in enumerate(self._preprocess_variants(region)):
+                debug[f"ocr_{source}_variant_{index}"] = variant
+            for index, variant in enumerate(self._preprocess_page_variants(region)):
+                debug[f"ocr_{source}_page_variant_{index}"] = variant
+        debug["ocr_best_for_tesseract"] = self.best_debug_variant(frame)
+        return debug
+
+    def extract_text(self, frame: np.ndarray) -> OCRResult | None:
+        candidates, frame_sharpness = self.extract_candidates(frame)
         if not candidates:
             return None
 
-        candidates.sort(key=lambda item: (item[2], *self._score_text(item[0]), item[1]), reverse=True)
-        text, confidence, _priority = candidates[0]
-        return OCRResult(text=text, confidence_hint=confidence, sharpness=frame_sharpness)
+        candidate = candidates[0]
+        return OCRResult(text=candidate.text, confidence_hint=candidate.confidence_hint, sharpness=frame_sharpness)
