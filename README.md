@@ -193,6 +193,14 @@ Mensaje de alerta:
 Cuidado. Hay un objeto a 12 centimetros.
 ```
 
+La alerta usa una voz rapida tipo lector de pantalla para usuarios con discapacidad visual:
+
+```env
+LUMINA_ULTRASONIC_SPEECH_RATE=500
+```
+
+Si se entiende bien y quieres mas velocidad, prueba `600`. Si es demasiado rapida, baja a `420`.
+
 Si aparece `echo pin set high`, revisa `ECHO`, divisor de voltaje, GND comun y que `TRIG/ECHO` no esten invertidos.
 
 ## Voz

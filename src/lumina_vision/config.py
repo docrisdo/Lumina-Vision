@@ -223,7 +223,7 @@ class AppConfig:
             ),
             ultrasonic_speech_rate=max(
                 120,
-                _env_int("LUMINA_ULTRASONIC_SPEECH_RATE", 260),
+                _env_int("LUMINA_ULTRASONIC_SPEECH_RATE", 500),
             ),
             log_level=_env_str("LUMINA_LOG_LEVEL", "INFO"),
         )
