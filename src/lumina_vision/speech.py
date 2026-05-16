@@ -38,15 +38,16 @@ class SpeechEngine:
         if configured == "piper" and self._piper_tts_available():
             return "piper"
         if configured == "piper":
-            logger.warning("Piper TTS no esta disponible. Usando espeak-ng si existe.")
-        if configured in {"espeak-ng", "pyttsx3"}:
+            logger.warning("Piper TTS no esta disponible. La voz normal no usara espeak-ng.")
+            return "none"
+        if configured == "espeak-ng":
+            logger.warning("espeak-ng queda reservado para la alerta ultrasonica; voz normal desactivada.")
+            return "none"
+        if configured == "pyttsx3":
             return configured
         if self._piper_tts_available():
             return "piper"
-        if shutil.which("espeak-ng"):
-            return "espeak-ng"
-        if pyttsx3 is not None:
-            return "pyttsx3"
+        logger.warning("Piper no esta disponible; voz normal desactivada.")
         return "none"
 
     def _piper_tts_available(self) -> bool:
@@ -66,7 +67,7 @@ class SpeechEngine:
             logger.warning("Piper no respondio a tiempo al validar el comando.")
             return False
         help_text = f"{help_result.stdout}\n{help_result.stderr}"
-        if "--model" not in help_text:
+        if "--model" not in help_text and "-m" not in help_text:
             logger.warning(
                 "El comando piper encontrado no parece ser Piper TTS: {}",
                 piper_path,
@@ -216,9 +217,7 @@ class SpeechEngine:
     def _speak_with_piper(self, text: str) -> None:
         cached_output = self._ensure_piper_audio(text)
         if cached_output is None:
-            logger.warning("Usando espeak-ng como respaldo porque Piper no genero audio.")
-            if shutil.which("espeak-ng"):
-                self._speak_with_espeak(text, rate=self.config.speech_rate)
+            logger.warning("Piper no genero audio. No se usara espeak-ng para voz normal.")
             return
 
         self._play_audio_file(cached_output)
@@ -277,6 +276,10 @@ class SpeechEngine:
         if not self.config.piper_model_path.exists():
             logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
             return None
+        piper_path = shutil.which("piper")
+        if not piper_path:
+            logger.warning("No se encontro el comando piper.")
+            return None
 
         self.config.piper_cache_dir.mkdir(parents=True, exist_ok=True)
         cache_key = hashlib.sha1(text.encode("utf-8")).hexdigest()
@@ -288,38 +291,66 @@ class SpeechEngine:
             logger.warning("Cache Piper invalido, se regenerara: {}", cached_output)
             cached_output.unlink(missing_ok=True)
 
+        piper_commands = [
+            [
+                piper_path,
+                "--model",
+                str(self.config.piper_model_path),
+                "--output_file",
+                str(cached_output),
+            ],
+            [
+                piper_path,
+                "--model",
+                str(self.config.piper_model_path),
+                "--output-file",
+                str(cached_output),
+            ],
+            [
+                piper_path,
+                "-m",
+                str(self.config.piper_model_path),
+                "-f",
+                str(cached_output),
+            ],
+        ]
+        last_stdout = ""
+        last_stderr = ""
         try:
-            result = subprocess.run(
-                [
-                    "piper",
-                    "--model",
-                    str(self.config.piper_model_path),
-                    "--output_file",
-                    str(cached_output),
-                ],
-                input=text,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self.config.tts_command_timeout_seconds,
-            )
+            for command in piper_commands:
+                cached_output.unlink(missing_ok=True)
+                result = subprocess.run(
+                    command,
+                    input=f"{text.strip()}\n",
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=self.config.tts_command_timeout_seconds,
+                )
+                last_stdout = result.stdout.strip()
+                last_stderr = result.stderr.strip()
+                if cached_output.exists() and cached_output.stat().st_size > 44:
+                    return cached_output
+                logger.warning(
+                    "Piper intento fallo: {} | exit={} | stdout='{}' stderr='{}'",
+                    " ".join(command),
+                    result.returncode,
+                    last_stdout,
+                    last_stderr,
+                )
         except subprocess.TimeoutExpired:
             logger.warning("Piper tardo demasiado generando audio para: {}", text)
-            return None
-        if result.returncode != 0:
-            logger.warning("Piper fallo: {}", result.stderr.strip())
             cached_output.unlink(missing_ok=True)
             return None
-        if not cached_output.exists() or cached_output.stat().st_size <= 44:
-            logger.warning(
-                "Piper no genero audio valido para '{}'. stdout='{}' stderr='{}'",
-                text,
-                result.stdout.strip(),
-                result.stderr.strip(),
-            )
-            cached_output.unlink(missing_ok=True)
-            return None
-        return cached_output
+
+        logger.warning(
+            "Piper no genero audio valido para '{}'. Ultimo stdout='{}' stderr='{}'",
+            text,
+            last_stdout,
+            last_stderr,
+        )
+        cached_output.unlink(missing_ok=True)
+        return None
 
     def _worker(self) -> None:
         while self._running:
