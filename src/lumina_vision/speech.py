@@ -216,6 +216,9 @@ class SpeechEngine:
     def _speak_with_piper(self, text: str) -> None:
         cached_output = self._ensure_piper_audio(text)
         if cached_output is None:
+            logger.warning("Usando espeak-ng como respaldo porque Piper no genero audio.")
+            if shutil.which("espeak-ng"):
+                self._speak_with_espeak(text, rate=self.config.speech_rate)
             return
 
         self._play_audio_file(cached_output)
@@ -280,7 +283,10 @@ class SpeechEngine:
         cached_output = self.config.piper_cache_dir / f"{cache_key}.wav"
 
         if cached_output.exists():
-            return cached_output
+            if cached_output.stat().st_size > 44:
+                return cached_output
+            logger.warning("Cache Piper invalido, se regenerara: {}", cached_output)
+            cached_output.unlink(missing_ok=True)
 
         try:
             result = subprocess.run(
@@ -302,6 +308,16 @@ class SpeechEngine:
             return None
         if result.returncode != 0:
             logger.warning("Piper fallo: {}", result.stderr.strip())
+            cached_output.unlink(missing_ok=True)
+            return None
+        if not cached_output.exists() or cached_output.stat().st_size <= 44:
+            logger.warning(
+                "Piper no genero audio valido para '{}'. stdout='{}' stderr='{}'",
+                text,
+                result.stdout.strip(),
+                result.stderr.strip(),
+            )
+            cached_output.unlink(missing_ok=True)
             return None
         return cached_output
 

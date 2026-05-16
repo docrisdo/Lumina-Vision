@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -19,6 +20,8 @@ def main() -> int:
     speech.start()
     speech.speak("Prueba de voz de Lumina Vision.")
     speech._queue.join()
+    speech.speak_alert("Cuidado. Hay un objeto a diez centimetros.")
+    time.sleep(2.0)
     speech.stop()
     return 0
 
