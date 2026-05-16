@@ -5,6 +5,8 @@ import queue
 import shutil
 import subprocess
 import threading
+import tempfile
+from pathlib import Path
 
 from loguru import logger
 
@@ -181,27 +183,24 @@ class SpeechEngine:
             str(amplitude),
         ]
 
-        if self.config.tts_output.lower() == "aplay" and shutil.which("aplay"):
-            espeak = subprocess.Popen(
-                [*base_cmd, "--stdout", text],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            aplay = subprocess.run(
-                ["aplay", "-q"],
-                stdin=espeak.stdout,
+        if self.config.tts_output.lower() != "direct" or rate is not None:
+            with tempfile.NamedTemporaryFile(prefix="lumina_espeak_", suffix=".wav", delete=False) as temp_file:
+                temp_path = Path(temp_file.name)
+            result = subprocess.run(
+                [*base_cmd, "-w", str(temp_path), text],
                 capture_output=True,
-                text=False,
+                text=True,
                 check=False,
                 timeout=self.config.tts_command_timeout_seconds,
             )
-            if espeak.stdout is not None:
-                espeak.stdout.close()
-            _, espeak_err = espeak.communicate(timeout=10)
-            if espeak.returncode not in (0, None):
-                logger.warning("espeak-ng fallo: {}", espeak_err.decode(errors="ignore").strip())
-            if aplay.returncode != 0:
-                logger.warning("aplay fallo: {}", aplay.stderr.decode(errors="ignore").strip())
+            if result.returncode != 0:
+                logger.warning("espeak-ng fallo: {}", result.stderr.strip())
+                temp_path.unlink(missing_ok=True)
+                return
+            try:
+                self._play_audio_file(temp_path)
+            finally:
+                temp_path.unlink(missing_ok=True)
             return
 
         result = subprocess.run(
@@ -219,16 +218,55 @@ class SpeechEngine:
         if cached_output is None:
             return
 
-        player = "paplay" if shutil.which("paplay") else "aplay"
-        play_result = subprocess.run(
-            [player, str(cached_output)],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=self.config.tts_command_timeout_seconds,
-        )
-        if play_result.returncode != 0:
-            logger.warning("{} fallo: {}", player, play_result.stderr.strip())
+        self._play_audio_file(cached_output)
+
+    def _wake_audio_sink(self) -> None:
+        if not shutil.which("pactl"):
+            return
+        commands = [
+            ["pactl", "suspend-sink", "@DEFAULT_SINK@", "false"],
+            ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "false"],
+        ]
+        for command in commands:
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+
+    def _audio_players(self) -> list[list[str]]:
+        players: list[list[str]] = []
+        if shutil.which("pw-play"):
+            players.append(["pw-play"])
+        if shutil.which("paplay"):
+            players.append(["paplay"])
+        if shutil.which("aplay"):
+            players.append(["aplay", "-q"])
+        return players
+
+    def _play_audio_file(self, audio_path: Path) -> None:
+        if not audio_path.exists() or audio_path.stat().st_size == 0:
+            logger.warning("No se puede reproducir audio: archivo inexistente o vacio: {}", audio_path)
+            return
+
+        self._wake_audio_sink()
+        last_error = ""
+        for player_cmd in self._audio_players():
+            play_result = subprocess.run(
+                [*player_cmd, str(audio_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self.config.tts_command_timeout_seconds,
+            )
+            if play_result.returncode == 0:
+                return
+            last_error = play_result.stderr.strip()
+            logger.warning("{} fallo: {}", player_cmd[0], last_error)
+
+        logger.warning("No se pudo reproducir audio con ningun reproductor. Ultimo error: {}", last_error)
 
     def _ensure_piper_audio(self, text: str):
         if not text:
