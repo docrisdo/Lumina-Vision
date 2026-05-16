@@ -93,7 +93,7 @@ def main() -> int:
     parser.add_argument(
         "--expected",
         default="",
-        help="Texto esperado para calibrar, por ejemplo: HOLA o El patito feo.",
+        help="Texto esperado para calibrar, por ejemplo: HOLA o El cuervo y la jarra.",
     )
     parser.add_argument(
         "--positions",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import unicodedata
 
 import cv2
 import numpy as np
@@ -30,31 +31,63 @@ class OCRCandidate:
 class OCRService:
     _SPANISH_COMMON_WORDS = {
         "a",
+        "agua",
         "al",
+        "aunque",
         "cada",
+        "comenzo",
         "como",
         "con",
+        "cuento",
+        "cuervo",
         "de",
         "del",
         "dentro",
+        "donde",
+        "e",
         "el",
+        "ella",
+        "ellos",
         "en",
+        "encontro",
+        "ensena",
+        "era",
+        "es",
         "este",
         "finalmente",
         "fondo",
+        "fue",
+        "habia",
         "hasta",
+        "inteligencia",
+        "jarra",
         "la",
         "las",
+        "le",
+        "lecturas",
         "lo",
         "los",
+        "mas",
+        "mientras",
+        "no",
         "para",
         "pero",
+        "pico",
+        "piedra",
+        "piedras",
+        "poco",
+        "problemas",
         "por",
+        "pudo",
         "que",
         "rapidamente",
+        "resolver",
         "se",
+        "sediento",
         "sobre",
         "su",
+        "subia",
+        "trato",
         "un",
         "una",
         "y",
@@ -244,6 +277,12 @@ class OCRService:
         normalized = text.translate(replacements).lower()
         return re.findall(r"[a-z]{2,}", normalized)
 
+    def _normalized_tokens(self, text: str) -> list[str]:
+        normalized = unicodedata.normalize("NFKD", text)
+        normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+        normalized = normalized.lower()
+        return re.findall(r"[a-z]{2,}", normalized)
+
     def _coherence_score(self, text: str, confidence: float = 0.0) -> float:
         raw_tokens = re.findall(r"\w+", text, flags=re.UNICODE)
         tokens = self._normalized_tokens(text)
@@ -266,6 +305,15 @@ class OCRService:
         if len(tokens) >= 5 and common_hits == 0:
             score -= 60.0
         return score
+
+    def _line_looks_readable(self, line: str, confidence: float = 0.0) -> bool:
+        tokens = self._normalized_tokens(line)
+        if len(tokens) < 2:
+            return False
+        common_hits = sum(1 for token in tokens if token in self._SPANISH_COMMON_WORDS)
+        if len(tokens) >= 5 and common_hits < 1:
+            return False
+        return self._coherence_score(line, confidence) >= 55
 
     def _looks_like_text(self, text: str) -> bool:
         tokens = re.findall(r"\w+", text, flags=re.UNICODE)
@@ -392,6 +440,7 @@ class OCRService:
 
         ordered_lines = [clean_ocr_text(" ".join(words)) for _key, words in sorted(lines.items())]
         ordered_lines = [line for line in ordered_lines if self._looks_like_text(line)]
+        ordered_lines = [line for line in ordered_lines if self._line_looks_readable(line)]
         text = clean_ocr_text(". ".join(ordered_lines))
         return text, float(np.mean(confidences)) if confidences else 0.0
 

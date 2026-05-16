@@ -114,7 +114,8 @@ python scripts/calibrate_ocr.py --expected HOLA
 Cuando eso funcione, calibra con una frase de una hoja real:
 
 ```bash
-python scripts/calibrate_ocr.py --expected "El patito feo"
+python scripts/calibrate_ocr.py --expected "El cuervo y la jarra"
+python scripts/calibrate_ocr.py --expected "Un cuervo sediento encontro una jarra"
 ```
 
 El script prueba varias posiciones de lente y al final muestra un valor como:
