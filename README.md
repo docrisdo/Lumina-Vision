@@ -152,7 +152,9 @@ python scripts/test_ocr_capture.py
 
 La ventana muestra una guia de enfoque. Usa este flujo:
 
-- Coloca la hoja dentro del rectangulo amarillo.
+- Si la camara se ve girada, presiona `R` hasta verla derecha. Copia ese valor a `LUMINA_CAMERA_ROTATION` en `.env`.
+- El contorno verde indica que la hoja fue detectada automaticamente y se procesara aunque no este centrada.
+- El rectangulo amarillo es solo guia/fallback si no se detecta la hoja.
 - Presiona `F` para enfocar.
 - Espera a que indique enfoque aceptable o bueno.
 - Presiona `ESPACIO` para capturar.

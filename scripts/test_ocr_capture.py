@@ -42,7 +42,7 @@ def _best_sharp_frame(camera: CameraManager, ocr: OCRService, samples: int = 8):
     best_sharpness = -1.0
     for _ in range(samples):
         frame = camera.read()
-        sharpness = ocr.sharpness(ocr._center_crop(frame))
+        sharpness = ocr.sharpness(ocr.focus_region(frame))
         if sharpness > best_sharpness:
             best_frame = frame
             best_sharpness = sharpness
@@ -52,14 +52,17 @@ def _best_sharp_frame(camera: CameraManager, ocr: OCRService, samples: int = 8):
 
 def _preview_capture(camera: CameraManager, ocr: OCRService):
     print("[Lumina] Acomoda el texto dentro de la ventana.")
-    print("[Lumina] Presiona ESPACIO para capturar, F para reenfocar, Q para salir.")
+    print("[Lumina] ESPACIO=capturar, F=enfocar, R=rotar, Q=salir.")
     while True:
         frame = camera.read()
         preview = frame.copy()
         height, width = preview.shape[:2]
         page_x1, page_y1, page_x2, page_y2 = ocr.roi_box(frame)
-        live_sharpness = ocr.sharpness(ocr._center_crop(frame))
+        document_box = ocr.document_box(frame)
+        live_sharpness = ocr.sharpness(ocr.focus_region(frame))
         focus_text, focus_color = _sharpness_label(live_sharpness)
+        if document_box is not None:
+            cv2.drawContours(preview, [document_box], -1, (0, 220, 0), 3)
         cv2.rectangle(
             preview,
             (page_x1, page_y1),
@@ -69,7 +72,7 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         )
         cv2.putText(
             preview,
-            "ESPACIO=capturar | F=enfocar | Q=salir",
+            f"ESPACIO=capturar | F=enfocar | R=rotar | Q=salir | rot={camera.config.camera_rotation}",
             (20, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.65,
@@ -89,7 +92,7 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         )
         cv2.putText(
             preview,
-            "Solo se procesa el rectangulo amarillo. Evita pantalla/reflejos/fondo.",
+            "Verde=hoja detectada. Amarillo=guia/fallback. Evita reflejos y movimiento.",
             (20, height - 20),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
@@ -101,6 +104,9 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         key = cv2.waitKey(1) & 0xFF
         if key in (ord("q"), 27):
             raise KeyboardInterrupt
+        if key == ord("r"):
+            camera.config.camera_rotation = (camera.config.camera_rotation + 90) % 360
+            print(f"[Lumina] Rotacion temporal: {camera.config.camera_rotation}. Si queda bien, ponlo en .env.")
         if key == ord("f"):
             camera.autofocus_cycle()
         if key == 32:

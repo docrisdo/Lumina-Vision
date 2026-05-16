@@ -28,6 +28,38 @@ class OCRCandidate:
 
 
 class OCRService:
+    _SPANISH_COMMON_WORDS = {
+        "a",
+        "al",
+        "cada",
+        "como",
+        "con",
+        "de",
+        "del",
+        "dentro",
+        "el",
+        "en",
+        "este",
+        "finalmente",
+        "fondo",
+        "hasta",
+        "la",
+        "las",
+        "lo",
+        "los",
+        "para",
+        "pero",
+        "por",
+        "que",
+        "rapidamente",
+        "se",
+        "sobre",
+        "su",
+        "un",
+        "una",
+        "y",
+    }
+
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
@@ -86,7 +118,7 @@ class OCRService:
         matrix = cv2.getPerspectiveTransform(rect, destination)
         return cv2.warpPerspective(frame, matrix, (max_width, max_height))
 
-    def _document_crop(self, frame: np.ndarray) -> np.ndarray | None:
+    def _document_box(self, frame: np.ndarray) -> np.ndarray | None:
         height, width = frame.shape[:2]
         area = float(height * width)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -102,23 +134,37 @@ class OCRService:
             perimeter = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, 0.03 * perimeter, True)
             if len(approx) == 4:
-                warped = self._four_point_transform(frame, approx)
-                warped_height, warped_width = warped.shape[:2]
-                if warped_width >= 220 and warped_height >= 220:
-                    return warped
+                rect = self._order_points(approx.reshape(4, 2).astype("float32"))
+                width_a = np.linalg.norm(rect[2] - rect[3])
+                width_b = np.linalg.norm(rect[1] - rect[0])
+                height_a = np.linalg.norm(rect[1] - rect[2])
+                height_b = np.linalg.norm(rect[0] - rect[3])
+                if max(width_a, width_b) >= 220 and max(height_a, height_b) >= 220:
+                    return approx
         return None
+
+    def _document_crop(self, frame: np.ndarray) -> np.ndarray | None:
+        box = self._document_box(frame)
+        if box is None:
+            return None
+        return self._four_point_transform(frame, box)
+
+    def document_box(self, frame: np.ndarray) -> np.ndarray | None:
+        return self._document_box(self._limit_width(frame))
+
+    def focus_region(self, frame: np.ndarray) -> np.ndarray:
+        document = self._document_crop(self._limit_width(frame))
+        if document is not None:
+            return document
+        return self._center_crop(frame)
 
     def _ocr_regions(self, frame: np.ndarray) -> list[tuple[str, np.ndarray]]:
         regions: list[tuple[str, np.ndarray]] = []
         document = self._document_crop(frame)
         if document is not None:
             regions.append(("documento", document))
-        center = self._center_crop(frame)
-        regions.append(("centro", center))
-        if not self.config.ocr_prefer_center_crop:
-            regions.insert(0, ("frame", frame))
-        else:
-            regions.append(("frame", frame))
+        regions.append(("frame", frame))
+        regions.append(("centro", self._center_crop(frame)))
         return regions
 
     def sharpness(self, frame: np.ndarray) -> float:
@@ -193,6 +239,34 @@ class OCRService:
     def _word_count(self, text: str) -> int:
         return len(re.findall(r"[^\W\d_]{2,}", text, flags=re.UNICODE))
 
+    def _normalized_tokens(self, text: str) -> list[str]:
+        replacements = str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN")
+        normalized = text.translate(replacements).lower()
+        return re.findall(r"[a-z]{2,}", normalized)
+
+    def _coherence_score(self, text: str, confidence: float = 0.0) -> float:
+        raw_tokens = re.findall(r"\w+", text, flags=re.UNICODE)
+        tokens = self._normalized_tokens(text)
+        if not raw_tokens or not tokens:
+            return 0.0
+
+        letters = sum(char.isalpha() for char in text)
+        alpha_ratio = letters / max(1, len(text))
+        single_letters = sum(1 for token in raw_tokens if len(token) == 1 and token.isalpha())
+        single_ratio = single_letters / max(1, len(raw_tokens))
+        common_hits = sum(1 for token in tokens if token in self._SPANISH_COMMON_WORDS)
+        avg_len = sum(len(token) for token in tokens) / max(1, len(tokens))
+
+        score = confidence
+        score += min(70.0, len(tokens) * 8.0)
+        score += min(90.0, common_hits * 22.0)
+        score += min(40.0, avg_len * 5.0)
+        score += alpha_ratio * 40.0
+        score -= single_ratio * 130.0
+        if len(tokens) >= 5 and common_hits == 0:
+            score -= 60.0
+        return score
+
     def _looks_like_text(self, text: str) -> bool:
         tokens = re.findall(r"\w+", text, flags=re.UNICODE)
         if not tokens:
@@ -213,7 +287,15 @@ class OCRService:
             return False
 
         # OCR noise often appears as many isolated letters: "i A a 4".
-        return single_letter_tokens <= max(2, len(useful_tokens))
+        if single_letter_tokens > max(2, len(useful_tokens) // 2):
+            return False
+
+        normalized_tokens = self._normalized_tokens(text)
+        if len(normalized_tokens) >= 5:
+            common_hits = sum(1 for token in normalized_tokens if token in self._SPANISH_COMMON_WORDS)
+            return common_hits >= 1
+
+        return True
 
     def _clean_large_text_candidate(self, text: str) -> str:
         tokens = re.findall(r"\w+", text, flags=re.UNICODE)
@@ -326,7 +408,11 @@ class OCRService:
             for variant in variants:
                 for psm in psms:
                     text, confidence = self._text_lines_from_data(variant, psm)
-                    if self._word_count(text) >= 5 and self._looks_like_text(text):
+                    if (
+                        self._word_count(text) >= 5
+                        and self._looks_like_text(text)
+                        and self._coherence_score(text, confidence) >= 95
+                    ):
                         candidates.append(OCRCandidate(text, confidence, 3, source))
             if candidates:
                 break
@@ -360,7 +446,11 @@ class OCRService:
         for variant in variants:
             for psm in psms:
                 cleaned, confidence = self._text_from_data(variant, psm)
-                if len(cleaned) >= self.config.ocr_min_text_length and self._looks_like_text(cleaned):
+                if (
+                    len(cleaned) >= self.config.ocr_min_text_length
+                    and self._looks_like_text(cleaned)
+                    and self._coherence_score(cleaned, confidence) >= 65
+                ):
                     candidates.append(OCRCandidate(cleaned, confidence, 1, source))
         return candidates
 
@@ -395,7 +485,12 @@ class OCRService:
                 break
 
         candidates.sort(
-            key=lambda item: (item.priority, *self._score_text(item.text), item.confidence_hint),
+            key=lambda item: (
+                item.priority,
+                self._coherence_score(item.text, item.confidence_hint),
+                *self._score_text(item.text),
+                item.confidence_hint,
+            ),
             reverse=True,
         )
         return candidates, frame_sharpness

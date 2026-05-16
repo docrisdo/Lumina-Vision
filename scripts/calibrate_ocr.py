@@ -69,6 +69,7 @@ def _configure(config: AppConfig) -> None:
     config.ocr_max_width = 1536
     config.ocr_page_mode = True
     config.ocr_prefer_center_crop = True
+    config.ocr_fast_mode = True
     config.ocr_min_text_length = 2
 
 
@@ -77,7 +78,7 @@ def _capture_best(camera: CameraManager, ocr: OCRService, samples: int) -> tuple
     best_sharpness = -1.0
     for _ in range(samples):
         frame = camera.read()
-        sharpness = ocr.sharpness(ocr._center_crop(frame))
+        sharpness = ocr.sharpness(ocr.focus_region(frame))
         if sharpness > best_sharpness:
             best_frame = frame
             best_sharpness = sharpness
