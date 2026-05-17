@@ -92,6 +92,75 @@ class OCRService:
         "una",
         "y",
     }
+    _SPANISH_COMMON_WORDS.update(
+        {
+            "abajo",
+            "abrio",
+            "ademas",
+            "ahora",
+            "alcanzaba",
+            "alli",
+            "animales",
+            "aprendio",
+            "arriba",
+            "beber",
+            "beberla",
+            "bien",
+            "blanco",
+            "buscar",
+            "casa",
+            "clase",
+            "cortas",
+            "crecio",
+            "cuando",
+            "dia",
+            "echo",
+            "escuela",
+            "eso",
+            "estaba",
+            "estar",
+            "feo",
+            "grande",
+            "hacer",
+            "hizo",
+            "hoja",
+            "huevo",
+            "huevos",
+            "jardin",
+            "leer",
+            "libro",
+            "mama",
+            "muy",
+            "nacio",
+            "nacidos",
+            "negro",
+            "nino",
+            "ninos",
+            "otro",
+            "otros",
+            "pagina",
+            "patito",
+            "porque",
+            "primero",
+            "presente",
+            "presentes",
+            "quedo",
+            "rechazado",
+            "rompio",
+            "ser",
+            "si",
+            "sin",
+            "subio",
+            "tener",
+            "texto",
+            "todos",
+            "trabajo",
+            "uno",
+            "verano",
+            "vez",
+        },
+    )
+    _NOISE_RE = re.compile(r"^[\W\d_]+$|^[bcdfghjklmnpqrstvwxyz]{4,}$", re.IGNORECASE)
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -151,9 +220,33 @@ class OCRService:
         matrix = cv2.getPerspectiveTransform(rect, destination)
         return cv2.warpPerspective(frame, matrix, (max_width, max_height))
 
-    def _document_box(self, frame: np.ndarray) -> np.ndarray | None:
+    def _candidate_document_boxes(self, frame: np.ndarray) -> list[np.ndarray]:
         height, width = frame.shape[:2]
         area = float(height * width)
+        boxes: list[np.ndarray] = []
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        white_mask = cv2.inRange(hsv, (0, 0, 95), (179, 95, 255))
+        white_mask = cv2.morphologyEx(
+            white_mask,
+            cv2.MORPH_CLOSE,
+            np.ones((17, 17), np.uint8),
+            iterations=2,
+        )
+        white_mask = cv2.morphologyEx(
+            white_mask,
+            cv2.MORPH_OPEN,
+            np.ones((5, 5), np.uint8),
+            iterations=1,
+        )
+        contours, _hierarchy = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:8]:
+            contour_area = cv2.contourArea(contour)
+            if contour_area < area * 0.04:
+                continue
+            points = cv2.boxPoints(cv2.minAreaRect(contour)).astype("float32").reshape(4, 1, 2)
+            boxes.append(points)
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
         edges = cv2.Canny(gray, 60, 180)
@@ -167,20 +260,51 @@ class OCRService:
             perimeter = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, 0.03 * perimeter, True)
             if len(approx) == 4:
-                rect = self._order_points(approx.reshape(4, 2).astype("float32"))
-                width_a = np.linalg.norm(rect[2] - rect[3])
-                width_b = np.linalg.norm(rect[1] - rect[0])
-                height_a = np.linalg.norm(rect[1] - rect[2])
-                height_b = np.linalg.norm(rect[0] - rect[3])
-                if max(width_a, width_b) >= 220 and max(height_a, height_b) >= 220:
-                    return approx
+                boxes.append(approx.astype("float32"))
+        return boxes
+
+    def _document_box(self, frame: np.ndarray) -> np.ndarray | None:
+        height, width = frame.shape[:2]
+        frame_area = float(height * width)
+        best_box: np.ndarray | None = None
+        best_score = 0.0
+
+        for box in self._candidate_document_boxes(frame):
+            rect = self._order_points(box.reshape(4, 2).astype("float32"))
+            width_a = np.linalg.norm(rect[2] - rect[3])
+            width_b = np.linalg.norm(rect[1] - rect[0])
+            height_a = np.linalg.norm(rect[1] - rect[2])
+            height_b = np.linalg.norm(rect[0] - rect[3])
+            doc_width = max(width_a, width_b)
+            doc_height = max(height_a, height_b)
+            doc_area = doc_width * doc_height
+            if doc_width < 180 or doc_height < 180 or doc_area < frame_area * 0.05:
+                continue
+            aspect = doc_width / max(1.0, doc_height)
+            if not 0.35 <= aspect <= 2.4:
+                continue
+
+            crop = self._four_point_transform(frame, box)
+            gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            brightness = float(np.mean(gray_crop))
+            contrast = float(np.std(gray_crop))
+            score = doc_area + brightness * 450.0 + contrast * 700.0
+            if score > best_score:
+                best_box = box
+                best_score = score
+
+        if best_box is not None:
+            return best_box.astype("int32")
         return None
 
     def _document_crop(self, frame: np.ndarray) -> np.ndarray | None:
         box = self._document_box(frame)
         if box is None:
             return None
-        return self._four_point_transform(frame, box)
+        crop = self._four_point_transform(frame, box)
+        if crop.shape[0] < 160 or crop.shape[1] < 160:
+            return None
+        return crop
 
     def document_box(self, frame: np.ndarray) -> np.ndarray | None:
         return self._document_box(self._limit_width(frame))
@@ -219,7 +343,8 @@ class OCRService:
 
     def _preprocess_variants(self, frame: np.ndarray) -> list[np.ndarray]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
+        scale = 2.0 if max(gray.shape[:2]) < 1200 else 1.35
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         gray = cv2.bilateralFilter(gray, 5, 50, 50)
@@ -234,6 +359,9 @@ class OCRService:
             31,
             11,
         )
+        otsu = self._add_ocr_border(otsu)
+        adaptive = self._add_ocr_border(adaptive)
+        sharpened = self._add_ocr_border(sharpened)
         if self.config.ocr_fast_mode:
             return [otsu, adaptive, sharpened]
         adaptive_inv = cv2.bitwise_not(adaptive)
@@ -242,7 +370,8 @@ class OCRService:
 
     def _preprocess_page_variants(self, frame: np.ndarray) -> list[np.ndarray]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=1.4, fy=1.4, interpolation=cv2.INTER_CUBIC)
+        scale = 1.7 if max(gray.shape[:2]) < 1300 else 1.25
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
         contrast = clahe.apply(gray)
         sharpened = cv2.addWeighted(contrast, 1.5, cv2.GaussianBlur(contrast, (0, 0), 1.0), -0.5, 0)
@@ -255,12 +384,42 @@ class OCRService:
             41,
             15,
         )
+        otsu = self._add_ocr_border(self._deskew(otsu))
+        adaptive = self._add_ocr_border(self._deskew(adaptive))
+        sharpened = self._add_ocr_border(sharpened)
+        contrast = self._add_ocr_border(contrast)
         if self.config.ocr_fast_mode:
             return [otsu, adaptive]
         return [otsu, adaptive, sharpened, contrast]
 
+    def _add_ocr_border(self, image: np.ndarray) -> np.ndarray:
+        return cv2.copyMakeBorder(image, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255)
+
+    def _deskew(self, image: np.ndarray) -> np.ndarray:
+        gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        inverted = cv2.bitwise_not(gray)
+        coords = np.column_stack(np.where(inverted > 0))
+        if coords.shape[0] < 100:
+            return image
+        angle = cv2.minAreaRect(coords)[-1]
+        if angle < -45:
+            angle = 90 + angle
+        if abs(angle) > 8:
+            return image
+        height, width = gray.shape[:2]
+        matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1.0)
+        return cv2.warpAffine(
+            image,
+            matrix,
+            (width, height),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
     def best_debug_variant(self, frame: np.ndarray) -> np.ndarray:
-        variants = self._preprocess_variants(self._center_crop(self._limit_width(frame)))
+        limited = self._limit_width(frame)
+        document = self._document_crop(limited)
+        variants = self._preprocess_page_variants(document if document is not None else self._center_crop(limited))
         return variants[0]
 
     def _score_text(self, text: str) -> tuple[int, int, int]:
@@ -294,6 +453,8 @@ class OCRService:
         single_letters = sum(1 for token in raw_tokens if len(token) == 1 and token.isalpha())
         single_ratio = single_letters / max(1, len(raw_tokens))
         common_hits = sum(1 for token in tokens if token in self._SPANISH_COMMON_WORDS)
+        noisy_tokens = sum(1 for token in tokens if self._NOISE_RE.match(token))
+        noise_ratio = noisy_tokens / max(1, len(tokens))
         avg_len = sum(len(token) for token in tokens) / max(1, len(tokens))
 
         score = confidence
@@ -302,18 +463,21 @@ class OCRService:
         score += min(40.0, avg_len * 5.0)
         score += alpha_ratio * 40.0
         score -= single_ratio * 130.0
+        score -= noise_ratio * 120.0
         if len(tokens) >= 5 and common_hits == 0:
             score -= 60.0
         return score
 
     def _line_looks_readable(self, line: str, confidence: float = 0.0) -> bool:
         tokens = self._normalized_tokens(line)
-        if len(tokens) < 2:
+        if len(tokens) < 2 and not (len(tokens) == 1 and len(tokens[0]) >= 4 and confidence >= 45):
+            return False
+        if any(self._NOISE_RE.match(token) for token in tokens):
             return False
         common_hits = sum(1 for token in tokens if token in self._SPANISH_COMMON_WORDS)
-        if len(tokens) >= 5 and common_hits < 1:
+        if len(tokens) >= 5 and common_hits < 1 and confidence < 55:
             return False
-        return self._coherence_score(line, confidence) >= 55
+        return self._coherence_score(line, confidence) >= 45
 
     def _looks_like_text(self, text: str) -> bool:
         tokens = re.findall(r"\w+", text, flags=re.UNICODE)
@@ -341,7 +505,7 @@ class OCRService:
         normalized_tokens = self._normalized_tokens(text)
         if len(normalized_tokens) >= 5:
             common_hits = sum(1 for token in normalized_tokens if token in self._SPANISH_COMMON_WORDS)
-            return common_hits >= 1
+            return common_hits >= 1 or self._coherence_score(text) >= 105
 
         return True
 
@@ -418,6 +582,7 @@ class OCRService:
             timeout=3 if self.config.ocr_fast_mode else 6,
         )
         lines: dict[tuple[int, int, int], list[str]] = {}
+        line_confidences: dict[tuple[int, int, int], list[float]] = {}
         confidences: list[float] = []
         for index, raw_text in enumerate(data.get("text", [])):
             text = clean_ocr_text(str(raw_text))
@@ -427,7 +592,7 @@ class OCRService:
                 confidence = float(data.get("conf", [])[index])
             except (ValueError, IndexError):
                 confidence = -1.0
-            if confidence < 30 and len(text) < self.config.ocr_min_text_length:
+            if confidence < 20 and len(text) < self.config.ocr_min_text_length:
                 continue
             key = (
                 int(data.get("block_num", [0])[index]),
@@ -437,12 +602,23 @@ class OCRService:
             lines.setdefault(key, []).append(text)
             if confidence >= 0:
                 confidences.append(confidence)
+                line_confidences.setdefault(key, []).append(confidence)
 
-        ordered_lines = [clean_ocr_text(" ".join(words)) for _key, words in sorted(lines.items())]
-        ordered_lines = [line for line in ordered_lines if self._looks_like_text(line)]
-        ordered_lines = [line for line in ordered_lines if self._line_looks_readable(line)]
+        average_confidence = float(np.mean(confidences)) if confidences else 0.0
+        ordered_lines: list[str] = []
+        for key, words in sorted(lines.items()):
+            line = clean_ocr_text(" ".join(words))
+            if not self._looks_like_text(line):
+                continue
+            line_confidence = (
+                float(np.mean(line_confidences.get(key, [])))
+                if line_confidences.get(key)
+                else average_confidence
+            )
+            if self._line_looks_readable(line, line_confidence):
+                ordered_lines.append(line)
         text = clean_ocr_text(". ".join(ordered_lines))
-        return text, float(np.mean(confidences)) if confidences else 0.0
+        return text, average_confidence
 
     def _extract_page_text(self, region: np.ndarray, source: str) -> list[OCRCandidate]:
         candidates: list[OCRCandidate] = []
@@ -451,18 +627,19 @@ class OCRService:
             self._rotate(region, -1.5),
             self._rotate(region, 1.5),
         )
-        psms = (6,) if self.config.ocr_fast_mode else (6, 4, 3)
+        psms = (6, 4) if self.config.ocr_fast_mode else (6, 4, 3)
         for rotated in rotations:
             variants = self._preprocess_page_variants(rotated)
             for variant in variants:
                 for psm in psms:
                     text, confidence = self._text_lines_from_data(variant, psm)
                     if (
-                        self._word_count(text) >= 5
+                        self._word_count(text) >= 4
                         and self._looks_like_text(text)
-                        and self._coherence_score(text, confidence) >= 95
+                        and self._coherence_score(text, confidence) >= 80
                     ):
-                        candidates.append(OCRCandidate(text, confidence, 3, source))
+                        priority = 4 if source == "documento" else 3
+                        candidates.append(OCRCandidate(text, confidence, priority, source))
             if candidates:
                 break
         return candidates

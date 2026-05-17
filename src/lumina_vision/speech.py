@@ -51,10 +51,31 @@ class SpeechEngine:
         return "none"
 
     def _piper_tts_available(self) -> bool:
-        piper_path = shutil.which("piper")
+        piper_path = self._resolve_piper_command()
         if not piper_path or not self.config.piper_model_path.exists():
             return False
 
+        return True
+
+    def _resolve_piper_command(self) -> str | None:
+        candidates = [
+            Path(".venv/bin/piper"),
+            Path("venv/bin/piper"),
+            shutil.which("piper-tts"),
+            shutil.which("piper"),
+        ]
+
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            piper_path = str(candidate)
+            if not Path(piper_path).exists() and shutil.which(piper_path) is None:
+                continue
+            if self._is_piper_tts_command(piper_path):
+                return piper_path
+        return None
+
+    def _is_piper_tts_command(self, piper_path: str) -> bool:
         try:
             help_result = subprocess.run(
                 [piper_path, "--help"],
@@ -276,9 +297,9 @@ class SpeechEngine:
         if not self.config.piper_model_path.exists():
             logger.warning("No se encontro el modelo Piper: {}", self.config.piper_model_path)
             return None
-        piper_path = shutil.which("piper")
+        piper_path = self._resolve_piper_command()
         if not piper_path:
-            logger.warning("No se encontro el comando piper.")
+            logger.warning("No se encontro un comando Piper TTS valido.")
             return None
 
         self.config.piper_cache_dir.mkdir(parents=True, exist_ok=True)
