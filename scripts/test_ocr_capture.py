@@ -30,9 +30,9 @@ def _configure_for_page_test(config: AppConfig) -> None:
 
 
 def _sharpness_label(sharpness: float) -> tuple[str, tuple[int, int, int]]:
-    if sharpness >= 80:
+    if sharpness >= 55:
         return "ENFOQUE BUENO", (0, 220, 0)
-    if sharpness >= 35:
+    if sharpness >= 18:
         return "ENFOQUE ACEPTABLE", (0, 200, 255)
     return "BORROSO: acerca/aleja y presiona F", (0, 0, 255)
 
@@ -126,10 +126,12 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         if key == 32:
             camera.autofocus_cycle()
             frame, sharpness = _best_sharp_frame(camera, ocr)
-            if sharpness < 35:
-                print(f"[Lumina] Captura borrosa: nitidez={sharpness:.1f}. No conviene procesar OCR.")
+            if sharpness < 12:
+                print(f"[Lumina] Captura demasiado borrosa: nitidez={sharpness:.1f}. No conviene procesar OCR.")
                 print("[Lumina] Acerca/aleja la hoja, mejora luz y vuelve a presionar F.")
                 continue
+            if sharpness < 25:
+                print(f"[Lumina] Captura con nitidez baja: {sharpness:.1f}. Se procesara de todos modos.")
             print(f"[Lumina] Captura elegida con nitidez: {sharpness:.1f}")
             return frame
 

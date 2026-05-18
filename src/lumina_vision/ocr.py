@@ -254,6 +254,34 @@ class OCRService:
         matrix = cv2.getPerspectiveTransform(rect, destination)
         return cv2.warpPerspective(frame, matrix, (max_width, max_height))
 
+    def _touches_frame_edge(
+        self,
+        box: tuple[int, int, int, int],
+        frame_shape: tuple[int, int, int] | tuple[int, int],
+        margin_ratio: float = 0.025,
+    ) -> bool:
+        height, width = frame_shape[:2]
+        x1, y1, x2, y2 = box
+        margin_x = int(width * margin_ratio)
+        margin_y = int(height * margin_ratio)
+        return x1 <= margin_x or y1 <= margin_y or x2 >= width - margin_x or y2 >= height - margin_y
+
+    def _dark_text_density(self, frame: np.ndarray) -> float:
+        if frame.size == 0:
+            return 0.0
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8)).apply(gray)
+        dark = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            31,
+            12,
+        )
+        dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+        return float(np.count_nonzero(dark)) / max(1.0, float(dark.size))
+
     def _candidate_document_boxes(self, frame: np.ndarray) -> list[np.ndarray]:
         height, width = frame.shape[:2]
         area = float(height * width)
@@ -312,7 +340,9 @@ class OCRService:
             doc_width = max(width_a, width_b)
             doc_height = max(height_a, height_b)
             doc_area = doc_width * doc_height
-            if doc_width < 180 or doc_height < 180 or doc_area < frame_area * 0.05:
+            if doc_width < 160 or doc_height < 160 or doc_area < frame_area * 0.035:
+                continue
+            if doc_area > frame_area * 0.9:
                 continue
             aspect = doc_width / max(1.0, doc_height)
             if not 0.35 <= aspect <= 2.4:
@@ -322,7 +352,10 @@ class OCRService:
             gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             brightness = float(np.mean(gray_crop))
             contrast = float(np.std(gray_crop))
-            score = doc_area + brightness * 450.0 + contrast * 700.0
+            text_density = self._dark_text_density(crop)
+            if text_density < 0.012 or text_density > 0.35:
+                continue
+            score = doc_area * (0.55 + text_density * 6.0) + contrast * 900.0 + brightness * 70.0
             if score > best_score:
                 best_box = box
                 best_score = score
@@ -339,6 +372,21 @@ class OCRService:
         if crop.shape[0] < 160 or crop.shape[1] < 160:
             return None
         return crop
+
+    def _document_region(self, frame: np.ndarray) -> ReadingRegion | None:
+        box = self._document_box(frame)
+        if box is None:
+            return None
+        crop = self._four_point_transform(frame, box)
+        if crop.shape[0] < 160 or crop.shape[1] < 160:
+            return None
+        x, y, w, h = cv2.boundingRect(box.reshape(-1, 2))
+        return ReadingRegion(
+            crop,
+            self._expand_box((x, y, x + w, y + h), frame.shape, padding_ratio=0.02),
+            float(crop.size) * (1.0 + self._dark_text_density(crop)),
+            "documento",
+        )
 
     def document_box(self, frame: np.ndarray) -> np.ndarray | None:
         return self._document_box(self._limit_width(frame))
@@ -366,7 +414,10 @@ class OCRService:
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             area = float(w * h)
-            if area < frame_area * 0.018 or area > frame_area * 0.78:
+            candidate_box = (x, y, x + w, y + h)
+            if area < frame_area * 0.012 or area > frame_area * 0.62:
+                continue
+            if area > frame_area * 0.38 and self._touches_frame_edge(candidate_box, frame.shape):
                 continue
             if w < 120 or h < 45:
                 continue
@@ -393,14 +444,17 @@ class OCRService:
 
     def reading_region(self, frame: np.ndarray) -> ReadingRegion | None:
         limited = self._limit_width(frame)
+        document_region = self._document_region(limited)
         text_region = self._text_region(limited)
-        if text_region is not None:
+
+        if document_region is not None:
+            if text_region is None:
+                return document_region
+            if document_region.score >= text_region.score * 0.75:
+                return document_region
             return text_region
 
-        document = self._document_crop(limited)
-        if document is None:
-            return None
-        return ReadingRegion(document, (0, 0, document.shape[1], document.shape[0]), float(document.size), "documento")
+        return text_region
 
     def reading_box(self, frame: np.ndarray) -> tuple[int, int, int, int] | None:
         region = self.reading_region(frame)
@@ -422,12 +476,12 @@ class OCRService:
 
     def _ocr_regions(self, frame: np.ndarray) -> list[tuple[str, np.ndarray]]:
         regions: list[tuple[str, np.ndarray]] = []
-        text_region = self._text_region(frame)
-        if text_region is not None:
-            regions.append((text_region.source, text_region.image))
         document = self._document_crop(frame)
         if document is not None:
             regions.append(("documento", document))
+        text_region = self._text_region(frame)
+        if text_region is not None:
+            regions.append((text_region.source, text_region.image))
         regions.append(("centro", self._center_crop(frame)))
         regions.append(("frame", frame))
         return regions
