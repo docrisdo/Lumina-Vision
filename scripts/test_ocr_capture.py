@@ -59,6 +59,7 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         height, width = preview.shape[:2]
         page_x1, page_y1, page_x2, page_y2 = ocr.roi_box(frame)
         document_box = ocr.document_box(frame)
+        reading_box = ocr.reading_box(frame)
         live_sharpness = ocr.sharpness(ocr.focus_region(frame))
         focus_text, focus_color = _sharpness_label(live_sharpness)
         if document_box is not None:
@@ -70,6 +71,19 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
             (0, 255, 255),
             2,
         )
+        if reading_box is not None:
+            rx1, ry1, rx2, ry2 = reading_box
+            cv2.rectangle(preview, (rx1, ry1), (rx2, ry2), (255, 180, 0), 3)
+            cv2.putText(
+                preview,
+                "REGION QUE SE VA A LEER",
+                (rx1, max(24, ry1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (255, 180, 0),
+                2,
+                cv2.LINE_AA,
+            )
         cv2.putText(
             preview,
             f"ESPACIO=capturar | F=enfocar | R=rotar | Q=salir | rot={camera.config.camera_rotation}",
@@ -92,7 +106,7 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
         )
         cv2.putText(
             preview,
-            "Verde=hoja detectada. Amarillo=guia/fallback. Evita reflejos y movimiento.",
+            "Azul=region OCR real. Verde=hoja. Amarillo=guia. Evita reflejos y movimiento.",
             (20, height - 20),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,

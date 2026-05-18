@@ -28,6 +28,14 @@ class OCRCandidate:
     source: str
 
 
+@dataclass(slots=True)
+class ReadingRegion:
+    image: np.ndarray
+    box: tuple[int, int, int, int]
+    score: float
+    source: str
+
+
 class OCRService:
     _SPANISH_COMMON_WORDS = {
         "a",
@@ -180,6 +188,32 @@ class OCRService:
         y2 = int(height * self.config.ocr_roi_y2)
         return frame[y1:y2, x1:x2]
 
+    def _crop_box(self, frame: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:
+        height, width = frame.shape[:2]
+        x1, y1, x2, y2 = box
+        x1 = max(0, min(width - 1, x1))
+        y1 = max(0, min(height - 1, y1))
+        x2 = max(x1 + 1, min(width, x2))
+        y2 = max(y1 + 1, min(height, y2))
+        return frame[y1:y2, x1:x2]
+
+    def _expand_box(
+        self,
+        box: tuple[int, int, int, int],
+        frame_shape: tuple[int, int, int] | tuple[int, int],
+        padding_ratio: float = 0.08,
+    ) -> tuple[int, int, int, int]:
+        height, width = frame_shape[:2]
+        x1, y1, x2, y2 = box
+        pad_x = int((x2 - x1) * padding_ratio)
+        pad_y = int((y2 - y1) * padding_ratio)
+        return (
+            max(0, x1 - pad_x),
+            max(0, y1 - pad_y),
+            min(width, x2 + pad_x),
+            min(height, y2 + pad_y),
+        )
+
     def roi_box(self, frame: np.ndarray) -> tuple[int, int, int, int]:
         height, width = frame.shape[:2]
         return (
@@ -309,19 +343,93 @@ class OCRService:
     def document_box(self, frame: np.ndarray) -> np.ndarray | None:
         return self._document_box(self._limit_width(frame))
 
+    def _text_region(self, frame: np.ndarray) -> ReadingRegion | None:
+        height, width = frame.shape[:2]
+        frame_area = float(height * width)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+        dark = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            31,
+            12,
+        )
+        dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(18, width // 42), 3))
+        grouped = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, horizontal_kernel, iterations=2)
+        grouped = cv2.dilate(grouped, np.ones((7, 7), np.uint8), iterations=2)
+
+        contours, _hierarchy = cv2.findContours(grouped, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        best_region: ReadingRegion | None = None
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            area = float(w * h)
+            if area < frame_area * 0.018 or area > frame_area * 0.78:
+                continue
+            if w < 120 or h < 45:
+                continue
+            aspect = w / max(1, h)
+            if not 0.45 <= aspect <= 8.5:
+                continue
+
+            expanded = self._expand_box((x, y, x + w, y + h), frame.shape, padding_ratio=0.16)
+            crop = self._crop_box(frame, expanded)
+            crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            crop_dark = dark[expanded[1] : expanded[3], expanded[0] : expanded[2]]
+            dark_density = float(np.count_nonzero(crop_dark)) / max(1.0, float(crop_dark.size))
+            brightness = float(np.mean(crop_gray))
+            contrast = float(np.std(crop_gray))
+            if dark_density < 0.015 or dark_density > 0.42:
+                continue
+            if brightness < 55 or contrast < 18:
+                continue
+
+            score = area * (0.75 + dark_density * 4.0) + contrast * 1200.0 + brightness * 120.0
+            if best_region is None or score > best_region.score:
+                best_region = ReadingRegion(crop, expanded, score, "texto")
+        return best_region
+
+    def reading_region(self, frame: np.ndarray) -> ReadingRegion | None:
+        limited = self._limit_width(frame)
+        text_region = self._text_region(limited)
+        if text_region is not None:
+            return text_region
+
+        document = self._document_crop(limited)
+        if document is None:
+            return None
+        return ReadingRegion(document, (0, 0, document.shape[1], document.shape[0]), float(document.size), "documento")
+
+    def reading_box(self, frame: np.ndarray) -> tuple[int, int, int, int] | None:
+        region = self.reading_region(frame)
+        if region is None:
+            return None
+        return region.box
+
+    def page_detected(self, frame: np.ndarray) -> bool:
+        region = self.reading_region(frame)
+        if region is None:
+            return False
+        return self.sharpness(region.image) >= max(10.0, self.config.ocr_min_sharpness * 0.7)
+
     def focus_region(self, frame: np.ndarray) -> np.ndarray:
-        document = self._document_crop(self._limit_width(frame))
-        if document is not None:
-            return document
+        region = self.reading_region(frame)
+        if region is not None:
+            return region.image
         return self._center_crop(frame)
 
     def _ocr_regions(self, frame: np.ndarray) -> list[tuple[str, np.ndarray]]:
         regions: list[tuple[str, np.ndarray]] = []
+        text_region = self._text_region(frame)
+        if text_region is not None:
+            regions.append((text_region.source, text_region.image))
         document = self._document_crop(frame)
         if document is not None:
             regions.append(("documento", document))
-        regions.append(("frame", frame))
         regions.append(("centro", self._center_crop(frame)))
+        regions.append(("frame", frame))
         return regions
 
     def sharpness(self, frame: np.ndarray) -> float:
@@ -418,8 +526,8 @@ class OCRService:
 
     def best_debug_variant(self, frame: np.ndarray) -> np.ndarray:
         limited = self._limit_width(frame)
-        document = self._document_crop(limited)
-        variants = self._preprocess_page_variants(document if document is not None else self._center_crop(limited))
+        region = self.reading_region(limited)
+        variants = self._preprocess_page_variants(region.image if region is not None else self._center_crop(limited))
         return variants[0]
 
     def _score_text(self, text: str) -> tuple[int, int, int]:
@@ -638,7 +746,7 @@ class OCRService:
                         and self._looks_like_text(text)
                         and self._coherence_score(text, confidence) >= 80
                     ):
-                        priority = 4 if source == "documento" else 3
+                        priority = 5 if source == "texto" else 4 if source == "documento" else 3
                         candidates.append(OCRCandidate(text, confidence, priority, source))
             if candidates:
                 break
@@ -724,6 +832,9 @@ class OCRService:
     def debug_variants(self, frame: np.ndarray) -> dict[str, np.ndarray]:
         frame = self._limit_width(frame)
         debug: dict[str, np.ndarray] = {"ocr_original": frame}
+        reading_region = self.reading_region(frame)
+        if reading_region is not None:
+            debug[f"ocr_region_lectura_{reading_region.source}"] = reading_region.image
         for source, region in self._ocr_regions(frame):
             debug[f"ocr_region_{source}"] = region
             for index, variant in enumerate(self._preprocess_variants(region)):

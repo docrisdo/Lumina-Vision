@@ -43,9 +43,11 @@ class LuminaPipeline:
         self._object_speech_gate = CooldownGate(config.speech_object_cooldown_seconds)
         self._ocr_speech_gate = CooldownGate(config.speech_ocr_cooldown_seconds)
         self._ultrasonic_speech_gate = CooldownGate(config.ultrasonic_alert_cooldown_seconds)
+        self._page_detected_gate = CooldownGate(10.0)
         self._last_ocr_at = 0.0
         self._last_ocr_speech_at = 0.0
         self._last_object_speech_at = 0.0
+        self._last_page_scan_at = 0.0
         self._frame_index = 0
         self._last_ocr_text = ""
         self._last_object_signature = ""
@@ -56,6 +58,8 @@ class LuminaPipeline:
         self._latest_ocr_status = "OCR esperando texto"
         self._ocr_candidate_text = ""
         self._ocr_candidate_count = 0
+        self._page_detected_count = 0
+        self._latest_reading_box: tuple[int, int, int, int] | None = None
         self._force_ocr = False
         self._ocr_lock = threading.Lock()
         self._ocr_worker: threading.Thread | None = None
@@ -107,6 +111,7 @@ class LuminaPipeline:
                 detections = self._visible_detections()
 
                 if self.config.enable_ocr and self.config.ocr_auto_read:
+                    self._handle_page_guidance(frame)
                     self._maybe_start_ocr(frame)
                     with self._ocr_lock:
                         ocr_text = self._latest_ocr_text
@@ -160,6 +165,36 @@ class LuminaPipeline:
             daemon=True,
         )
         self._ocr_worker.start()
+
+    def _handle_page_guidance(self, frame) -> None:
+        if (now_monotonic() - self._last_page_scan_at) < 0.35:
+            return
+        self._last_page_scan_at = now_monotonic()
+
+        reading_box = self.ocr.reading_box(frame)
+        with self._ocr_lock:
+            self._latest_reading_box = reading_box
+
+        if reading_box is None:
+            self._page_detected_count = 0
+            return
+
+        self._page_detected_count += 1
+        if self._page_detected_count < 3:
+            return
+
+        if not self.config.enable_tts or not self.config.speech_enable_ocr:
+            return
+        if self._latest_ocr_text:
+            return
+        if not self._page_detected_gate.ready():
+            return
+        if self.ultrasonic.close_obstacle_confirmed():
+            return
+
+        self._force_ocr = True
+        self.speech.speak("Hoja detectada. Manténla quieta, voy a leer.")
+        self._page_detected_gate.mark()
 
     def _run_ocr_job(self, frame, force_ocr: bool) -> None:
         self.camera.refocus(force=force_ocr)
@@ -355,6 +390,22 @@ class LuminaPipeline:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
                 (50, 200, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
+        with self._ocr_lock:
+            reading_box = self._latest_reading_box
+        if reading_box is not None:
+            x1, y1, x2, y2 = reading_box
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 255), 2)
+            cv2.putText(
+                annotated,
+                "REGION DE LECTURA",
+                (x1, max(22, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 255, 255),
                 2,
                 cv2.LINE_AA,
             )
