@@ -54,3 +54,25 @@ def test_fast_mode_does_not_try_full_frame(monkeypatch):
     sources = [source for source, _region in service._ocr_regions(frame)]
 
     assert "frame" not in sources
+
+
+def test_document_text_trim_keeps_lower_story_text(monkeypatch):
+    service = _ocr_service(monkeypatch)
+    page = np.full((1000, 700, 3), 255, dtype=np.uint8)
+    for index, y in enumerate(range(120, 820, 80)):
+        cv2.putText(
+            page,
+            f"linea de cuento {index}",
+            (70, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.2,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+    cv2.rectangle(page, (80, 850), (620, 980), (0, 0, 0), -1)
+
+    trimmed = service._trim_document_text_area(page)
+
+    assert trimmed.shape[0] >= 800
+    assert trimmed.shape[0] < page.shape[0]

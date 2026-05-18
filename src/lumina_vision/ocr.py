@@ -373,7 +373,55 @@ class OCRService:
         crop = self._four_point_transform(frame, box)
         if crop.shape[0] < 160 or crop.shape[1] < 160:
             return None
-        return crop
+        return self._trim_document_text_area(crop)
+
+    def _trim_document_text_area(self, crop: np.ndarray) -> np.ndarray:
+        height, width = crop.shape[:2]
+        margin_x = int(width * 0.035)
+        margin_top = int(height * 0.035)
+        margin_bottom = int(height * 0.025)
+        text_crop = crop[margin_top : height - margin_bottom, margin_x : width - margin_x]
+        if text_crop.size == 0:
+            return crop
+
+        gray = cv2.cvtColor(text_crop, cv2.COLOR_BGR2GRAY)
+        dark = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            31,
+            12,
+        )
+        lower_start = int(dark.shape[0] * 0.76)
+        lower_mask = dark[lower_start:]
+        lower_mask = cv2.morphologyEx(
+            lower_mask,
+            cv2.MORPH_CLOSE,
+            np.ones((21, 21), np.uint8),
+            iterations=2,
+        )
+        contours, _hierarchy = cv2.findContours(
+            lower_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        cutoff = text_crop.shape[0]
+        lower_area = float(max(1, lower_mask.size))
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            component_area = float(cv2.contourArea(contour))
+            is_large_picture = h >= text_crop.shape[0] * 0.1 or component_area >= lower_area * 0.06
+            reaches_low_area = y + h >= lower_mask.shape[0] * 0.45
+            if not is_large_picture or not reaches_low_area:
+                continue
+            cutoff = min(cutoff, lower_start + y)
+
+        if cutoff < text_crop.shape[0]:
+            cutoff = max(int(text_crop.shape[0] * 0.82), cutoff)
+            text_crop = text_crop[:cutoff]
+
+        return text_crop
 
     def _document_region(self, frame: np.ndarray) -> ReadingRegion | None:
         box = self._document_box(frame)
@@ -383,10 +431,11 @@ class OCRService:
         if crop.shape[0] < 160 or crop.shape[1] < 160:
             return None
         x, y, w, h = cv2.boundingRect(box.reshape(-1, 2))
+        text_crop = self._trim_document_text_area(crop)
         return ReadingRegion(
-            crop,
+            text_crop,
             self._expand_box((x, y, x + w, y + h), frame.shape, padding_ratio=0.02),
-            float(crop.size) * (1.0 + self._dark_text_density(crop)),
+            float(text_crop.size) * (1.0 + self._dark_text_density(text_crop)),
             "documento",
         )
 
