@@ -39,6 +39,8 @@ Descarga modelos:
 ```bash
 python scripts/download_lumina_assets.py
 bash scripts/download_piper_spanish_voice.sh
+# Opcional para mejorar localizacion de texto con EAST:
+bash scripts/download_east_text_model.sh
 ```
 
 Configura variables:
@@ -54,6 +56,7 @@ Dependencias principales de Python:
 
 - `numpy`: manejo de arreglos e imagenes para OCR y deteccion.
 - `opencv-python` (`cv2`): captura/preview, procesamiento de imagenes, recortes, nitidez, binarizacion y anotaciones visuales.
+- `cv2.dnn`: detector EAST opcional para localizar regiones reales de texto antes de llamar a Tesseract.
 - `pillow`: soporte general para imagenes y compatibilidad con utilidades de vision.
 - `python-dotenv`: carga de configuracion desde `.env`.
 - `loguru`: logs claros del sistema, camara, OCR, voz y sensores.
@@ -143,6 +146,27 @@ LUMINA_OCR_ROI_X2=0.78
 LUMINA_OCR_ROI_Y2=0.94
 LUMINA_OCR_FAST_MODE=true
 ```
+
+### Detector EAST Opcional
+
+Si la hoja se ve clara pero el OCR toma fondo, manos o bordes como texto, activa EAST. EAST localiza primero las zonas donde hay letras y luego Lumina manda solo ese recorte a Tesseract.
+
+Instala el modelo:
+
+```bash
+bash scripts/download_east_text_model.sh
+```
+
+Activalo en `.env`:
+
+```env
+LUMINA_OCR_EAST_ENABLED=true
+LUMINA_OCR_EAST_MODEL_PATH=models/frozen_east_text_detection.pb
+LUMINA_OCR_EAST_CONFIDENCE=0.45
+LUMINA_OCR_EAST_INPUT_SIZE=320
+```
+
+Nota de rendimiento: EAST mejora la localizacion de texto, pero cuesta mas CPU. Por eso solo corre dentro del ciclo OCR, no en cada frame de camara. Si la Raspberry se siente lenta, dejalo apagado y usa el modo de hoja/contornos.
 
 Para probar una hoja o libro:
 
@@ -278,6 +302,8 @@ El detector puede anunciar objetos comunes si el modelo los reconoce:
 - reloj
 
 Limitacion: con COCO no se reconocen todos los utiles escolares, como lapiz, cuaderno o regla. Para eso se necesita un modelo personalizado.
+
+Para una version futura de deteccion de objetos mas potente, YOLO exportado a NCNN es una ruta viable en Raspberry Pi 4 porque esta optimizado para CPU ARM. No esta activado por defecto en este prototipo porque OCR es la funcion principal y meter YOLO ahora puede bajar la fluidez general.
 
 ## Variables Principales
 
