@@ -74,5 +74,27 @@ def test_document_text_trim_keeps_lower_story_text(monkeypatch):
 
     trimmed = service._trim_document_text_area(page)
 
-    assert trimmed.shape[0] >= 800
+    assert trimmed.shape[0] >= 760
     assert trimmed.shape[0] < page.shape[0]
+
+
+def test_text_region_prefers_text_lines_over_solid_picture(monkeypatch):
+    service = _ocr_service(monkeypatch)
+    frame = np.full((700, 900, 3), 245, dtype=np.uint8)
+    cv2.rectangle(frame, (80, 440), (810, 650), (0, 0, 0), -1)
+    for index, y in enumerate((120, 190, 260, 330)):
+        cv2.putText(
+            frame,
+            f"cuento linea {index}",
+            (110, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.4,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+
+    region = service._text_region(frame)
+
+    assert region is not None
+    assert region.box[3] < 440

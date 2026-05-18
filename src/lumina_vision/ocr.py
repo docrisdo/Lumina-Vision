@@ -393,35 +393,85 @@ class OCRService:
             31,
             12,
         )
-        lower_start = int(dark.shape[0] * 0.76)
-        lower_mask = dark[lower_start:]
+        text_lines = self._text_line_bounds(dark)
+        picture_top = self._large_picture_top(dark)
+        if picture_top is not None:
+            text_lines = [line for line in text_lines if line[1] < picture_top]
+
+        if len(text_lines) >= 2:
+            y1 = max(0, min(line[0] for line in text_lines) - int(text_crop.shape[0] * 0.03))
+            y2 = min(
+                text_crop.shape[0],
+                max(line[1] for line in text_lines) + int(text_crop.shape[0] * 0.08),
+            )
+            if y2 - y1 >= text_crop.shape[0] * 0.35:
+                return text_crop[y1:y2]
+
+        if picture_top is not None:
+            cutoff = max(int(text_crop.shape[0] * 0.55), picture_top)
+            return text_crop[:cutoff]
+
+        return text_crop
+
+    def _text_line_bounds(self, dark_mask: np.ndarray) -> list[tuple[int, int]]:
+        height, width = dark_mask.shape[:2]
+        line_mask = cv2.morphologyEx(
+            dark_mask,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (max(24, width // 24), 3)),
+            iterations=1,
+        )
+        line_mask = cv2.dilate(line_mask, np.ones((3, 3), np.uint8), iterations=1)
+        contours, _hierarchy = cv2.findContours(
+            line_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        bounds: list[tuple[int, int]] = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            area = float(w * h)
+            density = float(np.count_nonzero(line_mask[y : y + h, x : x + w])) / max(1.0, area)
+            if w < width * 0.16:
+                continue
+            if h < max(6, height * 0.01) or h > max(height * 0.45, 130):
+                continue
+            if density > 0.86:
+                continue
+            bounds.append((y, y + h))
+        return sorted(bounds)
+
+    def _large_picture_top(self, dark_mask: np.ndarray) -> int | None:
+        height, width = dark_mask.shape[:2]
+        lower_start = int(height * 0.58)
+        lower_mask = dark_mask[lower_start:]
         lower_mask = cv2.morphologyEx(
             lower_mask,
             cv2.MORPH_CLOSE,
-            np.ones((21, 21), np.uint8),
-            iterations=2,
+            np.ones((9, 9), np.uint8),
+            iterations=1,
         )
         contours, _hierarchy = cv2.findContours(
             lower_mask,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE,
         )
-        cutoff = text_crop.shape[0]
+        picture_top: int | None = None
         lower_area = float(max(1, lower_mask.size))
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             component_area = float(cv2.contourArea(contour))
-            is_large_picture = h >= text_crop.shape[0] * 0.1 or component_area >= lower_area * 0.06
-            reaches_low_area = y + h >= lower_mask.shape[0] * 0.45
-            if not is_large_picture or not reaches_low_area:
+            is_large_picture = (
+                h >= height * 0.11
+                or component_area >= lower_area * 0.035
+            )
+            if not is_large_picture:
                 continue
-            cutoff = min(cutoff, lower_start + y)
-
-        if cutoff < text_crop.shape[0]:
-            cutoff = max(int(text_crop.shape[0] * 0.82), cutoff)
-            text_crop = text_crop[:cutoff]
-
-        return text_crop
+            if lower_start + y < height * 0.66:
+                continue
+            top = lower_start + y
+            picture_top = top if picture_top is None else min(picture_top, top)
+        return picture_top
 
     def _document_region(self, frame: np.ndarray) -> ReadingRegion | None:
         box = self._document_box(frame)
@@ -494,10 +544,20 @@ class OCRService:
                 continue
             if brightness < 55 or contrast < 18:
                 continue
-            if self._text_component_count(crop_dark) < 3:
+            line_count = len(self._text_line_bounds(crop_dark))
+            if line_count < 1 or self._text_component_count(crop_dark) < 3:
+                continue
+            picture_top = self._large_picture_top(crop_dark)
+            if picture_top is not None and picture_top < crop_dark.shape[0] * 0.58:
                 continue
 
-            score = area * (0.75 + dark_density * 4.0) + contrast * 1200.0 + brightness * 120.0
+            line_bonus = min(line_count, 12) * frame_area * 0.025
+            score = (
+                area * (0.45 + dark_density * 2.0)
+                + contrast * 900.0
+                + brightness * 80.0
+                + line_bonus
+            )
             if best_region is None or score > best_region.score:
                 best_region = ReadingRegion(crop, expanded, score, "texto")
         return best_region
