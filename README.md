@@ -164,10 +164,11 @@ Archivos de diagnostico:
 
 - `debug_ocr/ocr_original.jpg`: captura cruda.
 - `debug_ocr/ocr_best_for_tesseract.jpg`: variante para texto grande.
+- `debug_ocr/ocr_word_boxes_best.jpg`: palabras que Tesseract acepto con confianza alta. Verde significa palabra util; rojo significa posible ruido.
 - `debug_ocr/ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo recorte automatico de documento si se detecta.
 - `debug_ocr/ocr_*_page_variant_*.jpg`: variantes para lectura de pagina.
 
-Si el texto se ve borroso en la ventana, el OCR no va a leer bien. Primero calibra enfoque.
+Si `ocr_best_for_tesseract.jpg` se ve claro pero `ocr_word_boxes_best.jpg` casi no marca palabras, el problema es de preprocesamiento/Tesseract. Si las cajas aparecen sobre fondo, manos o bordes, el problema es de deteccion de region. Si el texto se ve borroso en la ventana, primero calibra enfoque.
 
 ## Calibrar Enfoque
 

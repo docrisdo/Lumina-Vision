@@ -37,6 +37,8 @@ class ReadingRegion:
 
 
 class OCRService:
+    _WORD_CONFIDENCE_MIN = 35.0
+    _WORD_BOX_CONFIDENCE_MIN = 50.0
     _SPANISH_COMMON_WORDS = {
         "a",
         "agua",
@@ -709,6 +711,28 @@ class OCRService:
             f"{whitelist}"
         )
 
+    def _parse_confidence(self, raw_conf: object) -> float:
+        try:
+            return float(raw_conf)
+        except (TypeError, ValueError):
+            return -1.0
+
+    def _word_looks_valid(self, text: str, confidence: float) -> bool:
+        if not text or confidence < self._WORD_CONFIDENCE_MIN:
+            return False
+        tokens = self._normalized_tokens(text)
+        if not tokens:
+            return False
+        token = tokens[0]
+        if len(token) == 1 and token not in {"a", "e", "o", "u", "y"}:
+            return False
+        if self._NOISE_RE.match(token):
+            return False
+        letters = sum(char.isalpha() for char in text)
+        if letters < 2 and token not in {"a", "e", "o", "u", "y"}:
+            return False
+        return True
+
     def _text_from_data(self, image: np.ndarray, psm: int) -> tuple[str, float]:
         data = pytesseract.image_to_data(
             image,
@@ -721,16 +745,11 @@ class OCRService:
         confidences: list[float] = []
         for raw_text, raw_conf in zip(data.get("text", []), data.get("conf", []), strict=False):
             text = clean_ocr_text(str(raw_text))
-            if not text:
+            confidence = self._parse_confidence(raw_conf)
+            if not self._word_looks_valid(text, confidence):
                 continue
-            try:
-                confidence = float(raw_conf)
-            except ValueError:
-                confidence = -1.0
-            if confidence >= 25 or len(text) >= self.config.ocr_min_text_length:
-                words.append(text)
-                if confidence >= 0:
-                    confidences.append(confidence)
+            words.append(text)
+            confidences.append(confidence)
         if not words:
             return "", 0.0
         return clean_ocr_text(" ".join(words)), float(np.mean(confidences)) if confidences else 0.0
@@ -748,13 +767,11 @@ class OCRService:
         confidences: list[float] = []
         for index, raw_text in enumerate(data.get("text", [])):
             text = clean_ocr_text(str(raw_text))
-            if not text:
-                continue
             try:
-                confidence = float(data.get("conf", [])[index])
-            except (ValueError, IndexError):
+                confidence = self._parse_confidence(data.get("conf", [])[index])
+            except IndexError:
                 confidence = -1.0
-            if confidence < 20 and len(text) < self.config.ocr_min_text_length:
+            if not self._word_looks_valid(text, confidence):
                 continue
             key = (
                 int(data.get("block_num", [0])[index]),
@@ -781,6 +798,45 @@ class OCRService:
                 ordered_lines.append(line)
         text = clean_ocr_text(". ".join(ordered_lines))
         return text, average_confidence
+
+    def debug_word_boxes(self, image: np.ndarray, psm: int = 6) -> np.ndarray:
+        if image.ndim == 2:
+            annotated = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        else:
+            annotated = image.copy()
+        data = pytesseract.image_to_data(
+            image,
+            lang=self.config.ocr_language,
+            config=self._ocr_config(psm),
+            output_type=Output.DICT,
+            timeout=3 if self.config.ocr_fast_mode else 6,
+        )
+        for index, raw_text in enumerate(data.get("text", [])):
+            text = clean_ocr_text(str(raw_text))
+            try:
+                confidence = self._parse_confidence(data.get("conf", [])[index])
+                x = int(data.get("left", [0])[index])
+                y = int(data.get("top", [0])[index])
+                w = int(data.get("width", [0])[index])
+                h = int(data.get("height", [0])[index])
+            except (IndexError, ValueError):
+                continue
+            if confidence < self._WORD_BOX_CONFIDENCE_MIN:
+                continue
+            color = (0, 220, 0) if self._word_looks_valid(text, confidence) else (0, 0, 220)
+            cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 2)
+            label = f"{text} {confidence:.0f}"
+            cv2.putText(
+                annotated,
+                label,
+                (x, max(18, y - 5)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
+        return annotated
 
     def _extract_page_text(self, region: np.ndarray, source: str) -> list[OCRCandidate]:
         candidates: list[OCRCandidate] = []
@@ -896,6 +952,7 @@ class OCRService:
             for index, variant in enumerate(self._preprocess_page_variants(region)):
                 debug[f"ocr_{source}_page_variant_{index}"] = variant
         debug["ocr_best_for_tesseract"] = self.best_debug_variant(frame)
+        debug["ocr_word_boxes_best"] = self.debug_word_boxes(debug["ocr_best_for_tesseract"])
         return debug
 
     def extract_text(self, frame: np.ndarray) -> OCRResult | None:
