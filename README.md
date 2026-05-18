@@ -131,7 +131,7 @@ El script prueba varias posiciones de lente y al final muestra un valor como:
 LUMINA_CAMERA_LENS_POSITION=4.5
 ```
 
-Pon ese valor en `.env`. Para lectura, una hoja/libro debe estar estable, bien iluminado y llenar la mayor parte del rectangulo de guia. Si el texto se ve borroso en `debug_ocr_calibration/best_ocr_original.jpg`, el OCR no va a leer bien aunque Tesseract este instalado.
+Pon ese valor en `.env`. Para lectura, una hoja/libro debe estar estable, bien iluminado y ocupar una parte clara de la vista de la camara. No tiene que quedar dentro del marco amarillo: el sistema intenta detectar la hoja automaticamente y luego enfoca el bloque de texto dentro de esa hoja. Si el texto se ve borroso en `debug_ocr_calibration/best_ocr_original.jpg`, el OCR no va a leer bien aunque Tesseract este instalado.
 
 Si el modulo quedo girado en los lentes, corrige la orientacion por software:
 
@@ -141,7 +141,15 @@ LUMINA_CAMERA_ROTATION=0
 
 Valores validos: `0`, `90`, `180`, `270`.
 
-El OCR solo procesa el rectangulo amarillo para evitar basura del fondo:
+El marco amarillo es una guia/fallback de pruebas, no una condicion obligatoria de lectura. En modo pagina, el OCR intenta este orden:
+
+1. Detectar la hoja/documento en la imagen completa.
+2. Corregir perspectiva de la hoja.
+3. Encontrar las lineas de texto dentro de la hoja.
+4. Recortar ilustraciones o manchas grandes antes de llamar a Tesseract.
+5. Usar el centro/fallback solo si no encuentra hoja ni bloque de texto confiable.
+
+Estas variables siguen disponibles para ajustar la guia/fallback:
 
 ```env
 LUMINA_OCR_ROI_X1=0.22
@@ -161,8 +169,9 @@ python scripts/test_ocr_capture.py
 La ventana muestra una guia de enfoque. Usa este flujo:
 
 - Si la camara se ve girada, presiona `R` hasta verla derecha. Copia ese valor a `LUMINA_CAMERA_ROTATION` en `.env`.
-- El contorno verde indica que la hoja fue detectada automaticamente y se procesara aunque no este centrada.
-- El rectangulo amarillo es solo guia/fallback si no se detecta la hoja.
+- El contorno verde indica que la hoja fue detectada automaticamente.
+- El rectangulo azul/naranja de "REGION QUE SE VA A LEER" debe caer sobre las letras. Si cae sobre la imagen, fondo, mano o borde, el problema es deteccion de region.
+- El rectangulo amarillo es solo guia/fallback si no se detecta la hoja; no debe ser obligatorio para una prueba real sin preview.
 - Presiona `F` para enfocar.
 - Espera a que indique enfoque aceptable o bueno.
 - Presiona `ESPACIO` para capturar.
@@ -172,7 +181,7 @@ Archivos de diagnostico:
 - `debug_ocr/ocr_original.jpg`: captura cruda.
 - `debug_ocr/ocr_best_for_tesseract.jpg`: variante para texto grande.
 - `debug_ocr/ocr_word_boxes_best.jpg`: palabras que Tesseract acepto con confianza alta. Verde significa palabra util; rojo significa posible ruido.
-- `debug_ocr/ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo recorte automatico de documento si se detecta.
+- `debug_ocr/ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo el bloque de texto recortado dentro del documento si se detecta.
 - `debug_ocr/ocr_*_page_variant_*.jpg`: variantes para lectura de pagina.
 
 Si `ocr_best_for_tesseract.jpg` se ve claro pero `ocr_word_boxes_best.jpg` casi no marca palabras, el problema es de preprocesamiento/Tesseract. Si las cajas aparecen sobre fondo, manos o bordes, el problema es de deteccion de region. Si el texto se ve borroso en la ventana, primero calibra enfoque.
