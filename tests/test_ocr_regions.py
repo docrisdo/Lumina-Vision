@@ -45,6 +45,7 @@ def test_reading_region_prefers_detected_document_outside_roi(monkeypatch):
     assert region is not None
     assert region.source == "documento"
     assert region.box[0] < int(frame.shape[1] * service.config.ocr_roi_x1)
+    assert region.box[3] < 340
 
 
 def test_fast_mode_does_not_try_full_frame(monkeypatch):
@@ -76,6 +77,32 @@ def test_document_text_trim_keeps_lower_story_text(monkeypatch):
 
     assert trimmed.shape[0] >= 760
     assert trimmed.shape[0] < page.shape[0]
+
+
+def test_document_region_box_targets_text_area(monkeypatch):
+    service = _ocr_service(monkeypatch)
+    frame = np.full((900, 700, 3), 35, dtype=np.uint8)
+    paper = np.array([[70, 40], [630, 45], [620, 850], [60, 845]], dtype=np.int32)
+    cv2.fillConvexPoly(frame, paper, (245, 245, 245))
+    for index, y in enumerate(range(150, 600, 80)):
+        cv2.putText(
+            frame,
+            f"cuento linea {index}",
+            (120, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 0, 0),
+            2,
+            cv2.LINE_AA,
+        )
+    cv2.rectangle(frame, (170, 690), (540, 810), (0, 0, 0), -1)
+
+    region = service.reading_region(frame)
+
+    assert region is not None
+    assert region.source == "documento"
+    assert region.box[1] > 60
+    assert region.box[3] < 720
 
 
 def test_text_region_prefers_text_lines_over_solid_picture(monkeypatch):

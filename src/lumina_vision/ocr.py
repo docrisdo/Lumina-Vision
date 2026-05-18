@@ -235,7 +235,11 @@ class OCRService:
         rect[3] = points[np.argmax(diffs)]
         return rect
 
-    def _four_point_transform(self, frame: np.ndarray, points: np.ndarray) -> np.ndarray:
+    def _four_point_transform_with_matrix(
+        self,
+        frame: np.ndarray,
+        points: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
         rect = self._order_points(points.reshape(4, 2).astype("float32"))
         top_left, top_right, bottom_right, bottom_left = rect
         width_a = np.linalg.norm(bottom_right - bottom_left)
@@ -254,7 +258,36 @@ class OCRService:
             dtype="float32",
         )
         matrix = cv2.getPerspectiveTransform(rect, destination)
-        return cv2.warpPerspective(frame, matrix, (max_width, max_height))
+        return cv2.warpPerspective(frame, matrix, (max_width, max_height)), matrix
+
+    def _four_point_transform(self, frame: np.ndarray, points: np.ndarray) -> np.ndarray:
+        crop, _matrix = self._four_point_transform_with_matrix(frame, points)
+        return crop
+
+    def _map_warp_box_to_frame(
+        self,
+        box: tuple[int, int, int, int],
+        matrix: np.ndarray,
+        frame_shape: tuple[int, int, int] | tuple[int, int],
+    ) -> tuple[int, int, int, int]:
+        x1, y1, x2, y2 = box
+        points = np.array(
+            [[
+                [float(x1), float(y1)],
+                [float(x2), float(y1)],
+                [float(x2), float(y2)],
+                [float(x1), float(y2)],
+            ]],
+            dtype="float32",
+        )
+        inverse = np.linalg.inv(matrix)
+        mapped = cv2.perspectiveTransform(points, inverse).reshape(-1, 2)
+        height, width = frame_shape[:2]
+        left = max(0, int(np.floor(np.min(mapped[:, 0]))))
+        top = max(0, int(np.floor(np.min(mapped[:, 1]))))
+        right = min(width, int(np.ceil(np.max(mapped[:, 0]))))
+        bottom = min(height, int(np.ceil(np.max(mapped[:, 1]))))
+        return self._expand_box((left, top, right, bottom), frame_shape, padding_ratio=0.04)
 
     def _touches_frame_edge(
         self,
@@ -373,18 +406,24 @@ class OCRService:
         crop = self._four_point_transform(frame, box)
         if crop.shape[0] < 160 or crop.shape[1] < 160:
             return None
-        return self._trim_document_text_area(crop)
+        text_crop, _text_box = self._document_text_area(crop)
+        return text_crop
 
     def _trim_document_text_area(self, crop: np.ndarray) -> np.ndarray:
+        text_crop, _text_box = self._document_text_area(crop)
+        return text_crop
+
+    def _document_text_area(self, crop: np.ndarray) -> tuple[np.ndarray, tuple[int, int, int, int]]:
         height, width = crop.shape[:2]
         margin_x = int(width * 0.035)
         margin_top = int(height * 0.035)
         margin_bottom = int(height * 0.025)
-        text_crop = crop[margin_top : height - margin_bottom, margin_x : width - margin_x]
-        if text_crop.size == 0:
-            return crop
+        base_box = (margin_x, margin_top, width - margin_x, height - margin_bottom)
+        base_crop = self._crop_box(crop, base_box)
+        if base_crop.size == 0:
+            return crop, (0, 0, width, height)
 
-        gray = cv2.cvtColor(text_crop, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(base_crop, cv2.COLOR_BGR2GRAY)
         dark = cv2.adaptiveThreshold(
             gray,
             255,
@@ -399,19 +438,21 @@ class OCRService:
             text_lines = [line for line in text_lines if line[1] < picture_top]
 
         if len(text_lines) >= 2:
-            y1 = max(0, min(line[0] for line in text_lines) - int(text_crop.shape[0] * 0.03))
+            y1 = max(0, min(line[0] for line in text_lines) - int(base_crop.shape[0] * 0.03))
             y2 = min(
-                text_crop.shape[0],
-                max(line[1] for line in text_lines) + int(text_crop.shape[0] * 0.08),
+                base_crop.shape[0],
+                max(line[1] for line in text_lines) + int(base_crop.shape[0] * 0.08),
             )
-            if y2 - y1 >= text_crop.shape[0] * 0.35:
-                return text_crop[y1:y2]
+            if y2 - y1 >= base_crop.shape[0] * 0.35:
+                text_box = (base_box[0], base_box[1] + y1, base_box[2], base_box[1] + y2)
+                return self._crop_box(crop, text_box), text_box
 
         if picture_top is not None:
-            cutoff = max(int(text_crop.shape[0] * 0.55), picture_top)
-            return text_crop[:cutoff]
+            cutoff = max(int(base_crop.shape[0] * 0.55), picture_top)
+            text_box = (base_box[0], base_box[1], base_box[2], base_box[1] + cutoff)
+            return self._crop_box(crop, text_box), text_box
 
-        return text_crop
+        return base_crop, base_box
 
     def _text_line_bounds(self, dark_mask: np.ndarray) -> list[tuple[int, int]]:
         height, width = dark_mask.shape[:2]
@@ -477,14 +518,14 @@ class OCRService:
         box = self._document_box(frame)
         if box is None:
             return None
-        crop = self._four_point_transform(frame, box)
+        crop, matrix = self._four_point_transform_with_matrix(frame, box)
         if crop.shape[0] < 160 or crop.shape[1] < 160:
             return None
-        x, y, w, h = cv2.boundingRect(box.reshape(-1, 2))
-        text_crop = self._trim_document_text_area(crop)
+        text_crop, text_box = self._document_text_area(crop)
+        mapped_box = self._map_warp_box_to_frame(text_box, matrix, frame.shape)
         return ReadingRegion(
             text_crop,
-            self._expand_box((x, y, x + w, y + h), frame.shape, padding_ratio=0.02),
+            mapped_box,
             float(text_crop.size) * (1.0 + self._dark_text_density(text_crop)),
             "documento",
         )
