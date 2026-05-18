@@ -717,6 +717,9 @@ class OCRService:
         except (TypeError, ValueError):
             return -1.0
 
+    def _is_tesseract_timeout(self, error: RuntimeError) -> bool:
+        return "timeout" in str(error).lower()
+
     def _word_looks_valid(self, text: str, confidence: float) -> bool:
         if not text or confidence < self._WORD_CONFIDENCE_MIN:
             return False
@@ -734,13 +737,18 @@ class OCRService:
         return True
 
     def _text_from_data(self, image: np.ndarray, psm: int) -> tuple[str, float]:
-        data = pytesseract.image_to_data(
-            image,
-            lang=self.config.ocr_language,
-            config=self._ocr_config(psm),
-            output_type=Output.DICT,
-            timeout=2 if self.config.ocr_fast_mode else 4,
-        )
+        try:
+            data = pytesseract.image_to_data(
+                image,
+                lang=self.config.ocr_language,
+                config=self._ocr_config(psm),
+                output_type=Output.DICT,
+                timeout=2 if self.config.ocr_fast_mode else 4,
+            )
+        except RuntimeError as error:
+            if not self._is_tesseract_timeout(error):
+                raise
+            return "", 0.0
         words: list[str] = []
         confidences: list[float] = []
         for raw_text, raw_conf in zip(data.get("text", []), data.get("conf", []), strict=False):
@@ -755,13 +763,18 @@ class OCRService:
         return clean_ocr_text(" ".join(words)), float(np.mean(confidences)) if confidences else 0.0
 
     def _text_lines_from_data(self, image: np.ndarray, psm: int) -> tuple[str, float]:
-        data = pytesseract.image_to_data(
-            image,
-            lang=self.config.ocr_language,
-            config=self._ocr_config(psm),
-            output_type=Output.DICT,
-            timeout=3 if self.config.ocr_fast_mode else 6,
-        )
+        try:
+            data = pytesseract.image_to_data(
+                image,
+                lang=self.config.ocr_language,
+                config=self._ocr_config(psm),
+                output_type=Output.DICT,
+                timeout=3 if self.config.ocr_fast_mode else 6,
+            )
+        except RuntimeError as error:
+            if not self._is_tesseract_timeout(error):
+                raise
+            return "", 0.0
         lines: dict[tuple[int, int, int], list[str]] = {}
         line_confidences: dict[tuple[int, int, int], list[float]] = {}
         confidences: list[float] = []
@@ -867,12 +880,17 @@ class OCRService:
         psms = (7, 8) if self.config.ocr_fast_mode else (8, 7, 13)
         for variant in variants:
             for psm in psms:
-                text = pytesseract.image_to_string(
-                    variant,
-                    lang=self.config.ocr_language,
-                    config=self._ocr_config(psm, large_text=True),
-                    timeout=1 if self.config.ocr_fast_mode else 2,
-                )
+                try:
+                    text = pytesseract.image_to_string(
+                        variant,
+                        lang=self.config.ocr_language,
+                        config=self._ocr_config(psm, large_text=True),
+                        timeout=2 if self.config.ocr_fast_mode else 4,
+                    )
+                except RuntimeError as error:
+                    if not self._is_tesseract_timeout(error):
+                        raise
+                    continue
                 cleaned = self._clean_large_text_candidate(clean_ocr_text(text))
                 letters = sum(char.isalpha() for char in cleaned)
                 if letters < max(2, self.config.ocr_min_text_length - 1):
