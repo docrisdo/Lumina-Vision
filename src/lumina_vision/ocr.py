@@ -395,8 +395,11 @@ class OCRService:
 
     def _text_region(self, frame: np.ndarray) -> ReadingRegion | None:
         height, width = frame.shape[:2]
-        frame_area = float(height * width)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        roi_x1, roi_y1, roi_x2, roi_y2 = self.roi_box(frame)
+        search_frame = self._crop_box(frame, (roi_x1, roi_y1, roi_x2, roi_y2))
+        search_height, search_width = search_frame.shape[:2]
+        frame_area = float(search_height * search_width)
+        gray = cv2.cvtColor(search_frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
         dark = cv2.adaptiveThreshold(
             gray,
@@ -407,7 +410,10 @@ class OCRService:
             12,
         )
         dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
-        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(18, width // 42), 3))
+        horizontal_kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT,
+            (max(18, search_width // 42), 3),
+        )
         grouped = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, horizontal_kernel, iterations=2)
         grouped = cv2.dilate(grouped, np.ones((7, 7), np.uint8), iterations=2)
 
@@ -419,7 +425,7 @@ class OCRService:
             candidate_box = (x, y, x + w, y + h)
             if area < frame_area * 0.012 or area > frame_area * 0.62:
                 continue
-            if area > frame_area * 0.38 and self._touches_frame_edge(candidate_box, frame.shape):
+            if self._touches_frame_edge(candidate_box, search_frame.shape, margin_ratio=0.012):
                 continue
             if w < 120 or h < 45:
                 continue
@@ -427,8 +433,12 @@ class OCRService:
             if not 0.45 <= aspect <= 8.5:
                 continue
 
-            expanded = self._expand_box((x, y, x + w, y + h), frame.shape, padding_ratio=0.16)
-            crop = self._crop_box(frame, expanded)
+            expanded = self._expand_box(
+                (x, y, x + w, y + h),
+                search_frame.shape,
+                padding_ratio=0.12,
+            )
+            crop = self._crop_box(search_frame, expanded)
             crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             crop_dark = dark[expanded[1] : expanded[3], expanded[0] : expanded[2]]
             dark_density = float(np.count_nonzero(crop_dark)) / max(1.0, float(crop_dark.size))
@@ -438,11 +448,38 @@ class OCRService:
                 continue
             if brightness < 55 or contrast < 18:
                 continue
+            if self._text_component_count(crop_dark) < 3:
+                continue
 
+            full_box = (
+                expanded[0] + roi_x1,
+                expanded[1] + roi_y1,
+                expanded[2] + roi_x1,
+                expanded[3] + roi_y1,
+            )
             score = area * (0.75 + dark_density * 4.0) + contrast * 1200.0 + brightness * 120.0
             if best_region is None or score > best_region.score:
-                best_region = ReadingRegion(crop, expanded, score, "texto")
+                best_region = ReadingRegion(crop, full_box, score, "texto")
         return best_region
+
+    def _text_component_count(self, dark_mask: np.ndarray) -> int:
+        contours, _hierarchy = cv2.findContours(
+            dark_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        height, width = dark_mask.shape[:2]
+        count = 0
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            if h < 5 or w < 2:
+                continue
+            if h > height * 0.75 or w > width * 0.9:
+                continue
+            if cv2.contourArea(contour) < 8:
+                continue
+            count += 1
+        return count
 
     def reading_region(self, frame: np.ndarray) -> ReadingRegion | None:
         limited = self._limit_width(frame)
@@ -485,7 +522,8 @@ class OCRService:
         if text_region is not None:
             regions.append((text_region.source, text_region.image))
         regions.append(("centro", self._center_crop(frame)))
-        regions.append(("frame", frame))
+        if not self.config.ocr_fast_mode:
+            regions.append(("frame", frame))
         return regions
 
     def sharpness(self, frame: np.ndarray) -> float:
