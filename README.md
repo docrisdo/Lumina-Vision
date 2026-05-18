@@ -4,6 +4,14 @@ Lentes inteligentes de asistencia para personas con discapacidad visual. El prot
 
 La prioridad actual del proyecto es lectura de texto escolar. La deteccion de objetos queda como apoyo, no como funcion principal.
 
+## Estado De Modulos
+
+- `OCR`: modulo principal. Usa Picamera2/OpenCV para localizar hoja o region de texto, preprocesa la imagen y valida palabras con Tesseract antes de hablar.
+- `Deteccion de objetos`: modulo de apoyo con TFLite. Se ejecuta con menor prioridad para no quitar rendimiento al OCR.
+- `Ultrasonico`: modulo urgente. Usa `espeak-ng` para avisar rapido cuando un objeto esta a menos de la distancia configurada.
+
+Fuera del flujo principal por rendimiento: detectores pesados de texto y YOLO/NCNN. Son rutas futuras posibles, pero no se activan en este prototipo para mantener estabilidad en Raspberry Pi 4.
+
 ## Funciones
 
 - Lectura de texto en espanol usando OCR con Tesseract.
@@ -39,8 +47,6 @@ Descarga modelos:
 ```bash
 python scripts/download_lumina_assets.py
 bash scripts/download_piper_spanish_voice.sh
-# Opcional para mejorar localizacion de texto con EAST:
-bash scripts/download_east_text_model.sh
 ```
 
 Configura variables:
@@ -56,12 +62,10 @@ Dependencias principales de Python:
 
 - `numpy`: manejo de arreglos e imagenes para OCR y deteccion.
 - `opencv-python` (`cv2`): captura/preview, procesamiento de imagenes, recortes, nitidez, binarizacion y anotaciones visuales.
-- `cv2.dnn`: detector EAST opcional para localizar regiones reales de texto antes de llamar a Tesseract.
 - `pillow`: soporte general para imagenes y compatibilidad con utilidades de vision.
 - `python-dotenv`: carga de configuracion desde `.env`.
 - `loguru`: logs claros del sistema, camara, OCR, voz y sensores.
 - `pytesseract`: conexion entre Python y Tesseract OCR para extraer texto de hojas/libros.
-- `pyttsx3`: motor TTS alternativo si Piper o `espeak-ng` no estan disponibles.
 - `requests`: descarga de modelos y assets desde scripts de instalacion.
 - `gpiozero`: lectura del sensor ultrasonico HC-SR04 en Raspberry Pi.
 
@@ -70,7 +74,7 @@ Dependencias del sistema en Raspberry:
 - `python3-picamera2` y `python3-libcamera`: control de la camara IMX708 y autofocus.
 - `tesseract-ocr` y `tesseract-ocr-spa`: motor OCR y paquete de idioma espanol.
 - `piper-tts`: voz local mas natural en espanol.
-- `espeak-ng`: voz alternativa y respaldo si Piper no esta disponible.
+- `espeak-ng`: voz rapida solo para alertas urgentes del ultrasonico.
 - `pulseaudio-utils`, `aplay`/`paplay`: reproduccion de audio por audifonos o bocina.
 - `ffmpeg`: soporte auxiliar de audio/multimedia.
 - `tflite_runtime`, `ai-edge-litert` o `tensorflow.lite`: runtime para modelos TFLite de deteccion de objetos.
@@ -146,27 +150,6 @@ LUMINA_OCR_ROI_X2=0.78
 LUMINA_OCR_ROI_Y2=0.94
 LUMINA_OCR_FAST_MODE=true
 ```
-
-### Detector EAST Opcional
-
-Si la hoja se ve clara pero el OCR toma fondo, manos o bordes como texto, activa EAST. EAST localiza primero las zonas donde hay letras y luego Lumina manda solo ese recorte a Tesseract.
-
-Instala el modelo:
-
-```bash
-bash scripts/download_east_text_model.sh
-```
-
-Activalo en `.env`:
-
-```env
-LUMINA_OCR_EAST_ENABLED=true
-LUMINA_OCR_EAST_MODEL_PATH=models/frozen_east_text_detection.pb
-LUMINA_OCR_EAST_CONFIDENCE=0.45
-LUMINA_OCR_EAST_INPUT_SIZE=320
-```
-
-Nota de rendimiento: EAST mejora la localizacion de texto, pero cuesta mas CPU. Por eso solo corre dentro del ciclo OCR, no en cada frame de camara. Si la Raspberry se siente lenta, dejalo apagado y usa el modo de hoja/contornos.
 
 Para probar una hoja o libro:
 
@@ -352,6 +335,13 @@ Probar OCR:
 ```bash
 source .venv/bin/activate
 python scripts/test_ocr_capture.py
+```
+
+Probar deteccion de objetos:
+
+```bash
+source .venv/bin/activate
+python scripts/test_object_detection.py
 ```
 
 Probar ultrasonico:

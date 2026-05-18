@@ -8,7 +8,6 @@ import cv2
 import numpy as np
 import pytesseract
 from pytesseract import Output
-from loguru import logger
 
 from lumina_vision.config import AppConfig
 from lumina_vision.utils import clean_ocr_text
@@ -175,8 +174,6 @@ class OCRService:
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self._east_net: cv2.dnn_Net | None = None
-        self._east_unavailable = False
 
     def _limit_width(self, frame: np.ndarray) -> np.ndarray:
         height, width = frame.shape[:2]
@@ -447,118 +444,6 @@ class OCRService:
                 best_region = ReadingRegion(crop, expanded, score, "texto")
         return best_region
 
-    def _load_east_net(self) -> cv2.dnn_Net | None:
-        if not self.config.ocr_east_enabled or self._east_unavailable:
-            return None
-        if self._east_net is not None:
-            return self._east_net
-        model_path = self.config.ocr_east_model_path
-        if not model_path.exists():
-            logger.warning("EAST OCR habilitado, pero no existe el modelo: {}", model_path)
-            self._east_unavailable = True
-            return None
-        try:
-            self._east_net = cv2.dnn.readNet(str(model_path))
-        except cv2.error as exc:
-            logger.warning("No se pudo cargar EAST OCR desde {}: {}", model_path, exc)
-            self._east_unavailable = True
-            return None
-        logger.info("Detector EAST OCR cargado: {}", model_path)
-        return self._east_net
-
-    def _east_text_region(self, frame: np.ndarray) -> ReadingRegion | None:
-        net = self._load_east_net()
-        if net is None:
-            return None
-
-        height, width = frame.shape[:2]
-        input_size = int(np.ceil(self.config.ocr_east_input_size / 32.0) * 32)
-        resized = cv2.resize(frame, (input_size, input_size), interpolation=cv2.INTER_AREA)
-        blob = cv2.dnn.blobFromImage(
-            resized,
-            1.0,
-            (input_size, input_size),
-            (123.68, 116.78, 103.94),
-            swapRB=True,
-            crop=False,
-        )
-        net.setInput(blob)
-        scores, geometry = net.forward(
-            ["feature_fusion/Conv_7/Sigmoid", "feature_fusion/concat_3"],
-        )
-
-        rects: list[list[int]] = []
-        confidences: list[float] = []
-        score_map = scores[0, 0]
-        geometry_map = geometry[0]
-        num_rows, num_cols = score_map.shape
-        min_confidence = self.config.ocr_east_confidence
-
-        for y in range(num_rows):
-            scores_data = score_map[y]
-            x0_data = geometry_map[0, y]
-            x1_data = geometry_map[1, y]
-            x2_data = geometry_map[2, y]
-            x3_data = geometry_map[3, y]
-            angles_data = geometry_map[4, y]
-            for x in range(num_cols):
-                confidence = float(scores_data[x])
-                if confidence < min_confidence:
-                    continue
-                offset_x = x * 4.0
-                offset_y = y * 4.0
-                angle = float(angles_data[x])
-                cos = np.cos(angle)
-                sin = np.sin(angle)
-                box_height = float(x0_data[x] + x2_data[x])
-                box_width = float(x1_data[x] + x3_data[x])
-                end_x = int(offset_x + (cos * x1_data[x]) + (sin * x2_data[x]))
-                end_y = int(offset_y - (sin * x1_data[x]) + (cos * x2_data[x]))
-                start_x = int(end_x - box_width)
-                start_y = int(end_y - box_height)
-                rects.append([start_x, start_y, int(box_width), int(box_height)])
-                confidences.append(confidence)
-
-        if not rects:
-            return None
-
-        indices = cv2.dnn.NMSBoxes(rects, confidences, min_confidence, 0.35)
-        if len(indices) == 0:
-            return None
-
-        scale_x = width / float(input_size)
-        scale_y = height / float(input_size)
-        boxes: list[tuple[int, int, int, int]] = []
-        for index in np.array(indices).flatten():
-            x, y, w, h = rects[int(index)]
-            x1 = max(0, int(x * scale_x))
-            y1 = max(0, int(y * scale_y))
-            x2 = min(width, int((x + w) * scale_x))
-            y2 = min(height, int((y + h) * scale_y))
-            if x2 - x1 < 18 or y2 - y1 < 10:
-                continue
-            boxes.append((x1, y1, x2, y2))
-
-        if len(boxes) < 2:
-            return None
-
-        x1 = min(box[0] for box in boxes)
-        y1 = min(box[1] for box in boxes)
-        x2 = max(box[2] for box in boxes)
-        y2 = max(box[3] for box in boxes)
-        union_area = float((x2 - x1) * (y2 - y1))
-        frame_area = float(width * height)
-        if union_area < frame_area * 0.015 or union_area > frame_area * 0.68:
-            return None
-
-        expanded = self._expand_box((x1, y1, x2, y2), frame.shape, padding_ratio=0.18)
-        crop = self._crop_box(frame, expanded)
-        density = self._dark_text_density(crop)
-        if density < 0.01 or density > 0.38:
-            return None
-        score = union_area * (1.0 + density * 5.0) + float(np.mean(confidences)) * 10000.0
-        return ReadingRegion(crop, expanded, score, "east_texto")
-
     def reading_region(self, frame: np.ndarray) -> ReadingRegion | None:
         limited = self._limit_width(frame)
         document_region = self._document_region(limited)
@@ -593,9 +478,6 @@ class OCRService:
 
     def _ocr_regions(self, frame: np.ndarray) -> list[tuple[str, np.ndarray]]:
         regions: list[tuple[str, np.ndarray]] = []
-        east_region = self._east_text_region(frame)
-        if east_region is not None:
-            regions.append((east_region.source, east_region.image))
         document = self._document_crop(frame)
         if document is not None:
             regions.append(("documento", document))

@@ -7,6 +7,6 @@ def test_config_defaults(monkeypatch):
 
     config = AppConfig.load()
 
-    assert config.camera_width == 1280
+    assert config.camera_width == 1536
     assert config.enable_ocr is True
     assert config.detection_run_every_n_frames >= 1

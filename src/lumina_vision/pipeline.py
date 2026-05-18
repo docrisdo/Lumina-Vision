@@ -193,7 +193,7 @@ class LuminaPipeline:
             return
 
         self._force_ocr = True
-        self.speech.speak("Hoja detectada. Manténla quieta, voy a leer.")
+        self.speech.speak("Hoja detectada. Mantenla quieta, voy a leer.")
         self._page_detected_gate.mark()
 
     def _run_ocr_job(self, frame, force_ocr: bool) -> None:

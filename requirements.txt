@@ -4,7 +4,6 @@ pillow>=10.4,<12
 python-dotenv>=1.0,<2
 loguru>=0.7,<1
 pytesseract>=0.3.10,<0.4
-pyttsx3>=2.98,<3
 requests>=2.32,<3
 
 # En Raspberry Pi suele ser mejor instalar Picamera2 desde apt:

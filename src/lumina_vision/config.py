@@ -67,10 +67,6 @@ class AppConfig:
     ocr_max_width: int
     ocr_min_sharpness: float
     ocr_stable_reads: int
-    ocr_east_enabled: bool
-    ocr_east_model_path: Path
-    ocr_east_confidence: float
-    ocr_east_input_size: int
     ocr_prefer_center_crop: bool
     ocr_roi_x1: float
     ocr_roi_y1: float
@@ -164,12 +160,6 @@ class AppConfig:
             ocr_max_width=max(640, _env_int("LUMINA_OCR_MAX_WIDTH", 1536)),
             ocr_min_sharpness=max(0.0, _env_float("LUMINA_OCR_MIN_SHARPNESS", 18.0)),
             ocr_stable_reads=max(1, _env_int("LUMINA_OCR_STABLE_READS", 2)),
-            ocr_east_enabled=_env_bool("LUMINA_OCR_EAST_ENABLED", False),
-            ocr_east_model_path=Path(
-                _env_str("LUMINA_OCR_EAST_MODEL_PATH", "models/frozen_east_text_detection.pb"),
-            ),
-            ocr_east_confidence=min(0.95, max(0.1, _env_float("LUMINA_OCR_EAST_CONFIDENCE", 0.45))),
-            ocr_east_input_size=max(320, _env_int("LUMINA_OCR_EAST_INPUT_SIZE", 320)),
             ocr_prefer_center_crop=_env_bool("LUMINA_OCR_PREFER_CENTER_CROP", True),
             ocr_roi_x1=min(0.45, max(0.0, _env_float("LUMINA_OCR_ROI_X1", 0.22))),
             ocr_roi_y1=min(0.45, max(0.0, _env_float("LUMINA_OCR_ROI_Y1", 0.06))),

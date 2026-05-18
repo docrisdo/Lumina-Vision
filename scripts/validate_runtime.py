@@ -31,8 +31,18 @@ def main() -> int:
     if shutil.which("tesseract") is None:
         warnings.append("Tesseract no esta en PATH. OCR puede fallar.")
 
-    if config.enable_tts and shutil.which("espeak-ng") is None:
-        warnings.append("espeak-ng no esta en PATH. Se intentara usar pyttsx3.")
+    if config.enable_tts:
+        if not config.piper_model_path.exists():
+            warnings.append(f"Falta el modelo Piper para voz normal: {config.piper_model_path}")
+        if (
+            shutil.which("piper") is None
+            and shutil.which("piper-tts") is None
+            and not Path(".venv/bin/piper").exists()
+        ):
+            warnings.append("No se encontro Piper. OCR y objetos no tendran voz normal.")
+
+    if config.enable_ultrasonic and shutil.which("espeak-ng") is None:
+        warnings.append("espeak-ng no esta en PATH. La alerta ultrasonica urgente puede tardar mas.")
 
     if config.tts_output.lower() == "aplay" and shutil.which("aplay") is None:
         warnings.append("LUMINA_TTS_OUTPUT=aplay pero aplay no esta instalado.")

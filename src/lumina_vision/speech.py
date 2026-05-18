@@ -12,11 +12,6 @@ from loguru import logger
 
 from lumina_vision.config import AppConfig
 
-try:
-    import pyttsx3
-except ImportError:
-    pyttsx3 = None
-
 
 class SpeechEngine:
     def __init__(self, config: AppConfig) -> None:
@@ -25,13 +20,6 @@ class SpeechEngine:
         self._running = False
         self._thread: threading.Thread | None = None
         self._engine_name = self._resolve_engine()
-        self._pyttsx3_engine = None
-
-        if self._engine_name == "pyttsx3" and pyttsx3 is not None:
-            self._pyttsx3_engine = pyttsx3.init()
-            self._pyttsx3_engine.setProperty("rate", self.config.speech_rate)
-            self._pyttsx3_engine.setProperty("volume", self.config.speech_volume)
-            self._configure_spanish_voice()
 
     def _resolve_engine(self) -> str:
         configured = self.config.tts_engine.lower()
@@ -43,8 +31,9 @@ class SpeechEngine:
         if configured == "espeak-ng":
             logger.warning("espeak-ng queda reservado para la alerta ultrasonica; voz normal desactivada.")
             return "none"
-        if configured == "pyttsx3":
-            return configured
+        if configured not in {"auto", "piper", "espeak-ng"}:
+            logger.warning("Motor TTS no soportado: {}. Usa LUMINA_TTS_ENGINE=piper.", configured)
+            return "none"
         if self._piper_tts_available():
             return "piper"
         logger.warning("Piper no esta disponible; voz normal desactivada.")
@@ -126,28 +115,6 @@ class SpeechEngine:
             daemon=True,
         )
         thread.start()
-
-    def _configure_spanish_voice(self) -> None:
-        if self._pyttsx3_engine is None:
-            return
-
-        for voice in self._pyttsx3_engine.getProperty("voices"):
-            voice_id = getattr(voice, "id", "").lower()
-            voice_name = getattr(voice, "name", "").lower()
-            languages = " ".join(str(item).lower() for item in getattr(voice, "languages", []))
-            if (
-                "spanish" in voice_name
-                or "es_" in voice_id
-                or "es-" in voice_id
-                or "mex" in voice_name
-                or "spanish" in languages
-                or "es" in languages
-            ):
-                self._pyttsx3_engine.setProperty("voice", voice.id)
-                logger.info("Voz en espanol seleccionada: {}", getattr(voice, "name", voice.id))
-                return
-
-        logger.warning("No se encontro una voz explicita en espanol para pyttsx3.")
 
     def _clear_queue(self) -> None:
         while True:
@@ -383,11 +350,6 @@ class SpeechEngine:
             try:
                 if self._engine_name == "piper":
                     self._speak_with_piper(text)
-                elif self._engine_name == "espeak-ng":
-                    self._speak_with_espeak(text)
-                elif self._engine_name == "pyttsx3" and self._pyttsx3_engine is not None:
-                    self._pyttsx3_engine.say(text)
-                    self._pyttsx3_engine.runAndWait()
             except Exception as exc:
                 logger.exception("Error reproduciendo voz: {}", exc)
             finally:
