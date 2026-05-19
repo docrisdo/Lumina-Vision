@@ -412,7 +412,7 @@ def main() -> int:
             print(f"[Lumina] Nitidez: {sharpness:.1f}")
         if not args.no_speech:
             print("[Lumina] Leyendo texto con Piper...")
-            speech.speak(spoken_text or result.text, priority=True, ocr_text=True)
+            speech.speak(spoken_text or result.text, priority=True, ocr_text=True, fluent=spoken_text is not None)
             speech.wait_until_done()
         return 0
     finally:

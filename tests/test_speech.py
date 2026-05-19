@@ -31,6 +31,21 @@ def test_speech_splits_long_text_for_piper():
     assert all(len(chunk) <= 75 for chunk in chunks)
 
 
+def test_speech_can_use_fluent_chunks_for_clean_expected_text():
+    speech = object.__new__(SpeechEngine)
+    text = (
+        "El cuervo y la jarra. "
+        "Un cuervo sediento encontro una jarra con un poco de agua en el fondo. "
+        "Pensando rapidamente comenzo a echar piedras dentro de la jarra. "
+        "Este cuento ensena sobre la inteligencia y la perseverancia para resolver problemas."
+    )
+
+    chunks = speech._split_speech_chunks(text, max_chars=180)
+
+    assert len(chunks) < len(speech._split_speech_chunks(text))
+    assert all(len(chunk) <= 180 for chunk in chunks)
+
+
 def test_speech_smooths_ocr_artifact_periods_between_words():
     speech = object.__new__(SpeechEngine)
 

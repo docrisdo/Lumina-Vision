@@ -126,15 +126,22 @@ class SpeechEngine:
             except queue.Empty:
                 break
 
-    def speak(self, text: str, *, priority: bool = False, ocr_text: bool = False) -> None:
+    def speak(
+        self,
+        text: str,
+        *,
+        priority: bool = False,
+        ocr_text: bool = False,
+        fluent: bool = False,
+    ) -> None:
         if not self._running or not text.strip():
             return
         clean_text = self._normalize_speech_text(text)
-        if ocr_text:
+        if ocr_text and not fluent:
             clean_text = self._smooth_ocr_reading_text(clean_text)
         if not clean_text:
             return
-        chunks = self._split_speech_chunks(clean_text)
+        chunks = self._split_speech_chunks(clean_text, max_chars=180 if fluent else 75)
         if priority:
             self._clear_queue()
         while self._queue.qsize() >= self.config.speech_max_queue_size:
