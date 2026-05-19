@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from difflib import SequenceMatcher
 from pathlib import Path
 import re
 import sys
@@ -205,14 +206,51 @@ def _normalized_expected_tokens(text: str) -> list[str]:
     ]
 
 
+def _normalized_expected_text(text: str) -> str:
+    return " ".join(_normalized_expected_tokens(text))
+
+
+def _approximate_token_matches(observed_tokens: set[str], expected_tokens: set[str]) -> int:
+    matches = 0
+    unused_expected = set(expected_tokens)
+    for token in sorted(observed_tokens, key=len, reverse=True):
+        if token in unused_expected:
+            matches += 1
+            unused_expected.remove(token)
+            continue
+        if len(token) < 4:
+            continue
+        best_match = ""
+        best_score = 0.0
+        for expected_token in unused_expected:
+            if abs(len(token) - len(expected_token)) > 4:
+                continue
+            score = SequenceMatcher(None, token, expected_token).ratio()
+            if token[:4] == expected_token[:4]:
+                score += 0.08
+            if score > best_score:
+                best_match = expected_token
+                best_score = score
+        if best_match and best_score >= 0.74:
+            matches += 1
+            unused_expected.remove(best_match)
+    return matches
+
+
 def _expected_text_similarity(observed_text: str, expected_text: str) -> tuple[float, int]:
     observed_tokens = set(_normalized_expected_tokens(observed_text))
     expected_tokens = set(_normalized_expected_tokens(expected_text))
     if not observed_tokens or not expected_tokens:
         return 0.0, 0
-    matches = observed_tokens & expected_tokens
+    matches = _approximate_token_matches(observed_tokens, expected_tokens)
     denominator = min(len(observed_tokens), len(expected_tokens))
-    return len(matches) / max(1, denominator), len(matches)
+    token_similarity = matches / max(1, denominator)
+    text_similarity = SequenceMatcher(
+        None,
+        _normalized_expected_text(observed_text),
+        _normalized_expected_text(expected_text),
+    ).ratio()
+    return max(token_similarity, text_similarity), matches
 
 
 def _should_use_expected_text(
@@ -223,7 +261,7 @@ def _should_use_expected_text(
     min_confidence: float,
     min_chars: int,
     min_similarity: float,
-    min_matches: int = 4,
+    min_matches: int = 3,
 ) -> tuple[bool, float, int]:
     if not observed_text.strip() or not expected_text:
         return False, 0.0, 0

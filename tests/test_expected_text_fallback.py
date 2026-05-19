@@ -60,3 +60,33 @@ def test_expected_text_fallback_can_use_weak_text_when_main_ocr_failed():
     assert use_expected is True
     assert similarity >= 0.45
     assert matches >= 4
+
+
+def test_expected_text_fallback_accepts_noisy_story_ocr():
+    use_expected, similarity, matches = _should_use_expected_text(
+        "CEST Un encontro Jarro con un PoCo de agua enel fondo Trato de beberla "
+        "PO pico no alcanzaba",
+        85.1,
+        EXPECTED_TEXT,
+        min_confidence=90.0,
+        min_chars=80,
+        min_similarity=0.45,
+    )
+
+    assert use_expected is True
+    assert similarity >= 0.45
+    assert matches >= 3
+
+
+def test_expected_text_fallback_rejects_generic_school_words_only():
+    use_expected, similarity, matches = _should_use_expected_text(
+        "cuento lectura texto palabras escuela pagina problemas inteligencia",
+        70.0,
+        EXPECTED_TEXT,
+        min_confidence=90.0,
+        min_chars=80,
+        min_similarity=0.45,
+    )
+
+    assert use_expected is False
+    assert matches < 3 or similarity < 0.45
