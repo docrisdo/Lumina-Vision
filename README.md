@@ -147,15 +147,15 @@ LUMINA_CAMERA_ROTATION=0
 
 Valores validos: `0`, `90`, `180`, `270`.
 
-El marco amarillo es una guia/fallback de pruebas, no una condicion obligatoria de lectura. En modo pagina, el OCR intenta este orden:
+El marco amarillo es una guia visual de pruebas, no una condicion obligatoria de lectura. En modo pagina, el OCR intenta este orden:
 
 1. Detectar la hoja/documento en la imagen completa.
 2. Corregir perspectiva de la hoja.
 3. Encontrar las lineas de texto dentro de la hoja.
 4. Recortar ilustraciones o manchas grandes antes de llamar a Tesseract.
-5. Usar el centro/fallback solo si no encuentra hoja ni bloque de texto confiable.
+5. Usar una region central de apoyo solo si no encuentra hoja ni bloque de texto confiable.
 
-Estas variables siguen disponibles para ajustar la guia/fallback:
+Estas variables siguen disponibles para ajustar la guia visual:
 
 ```env
 LUMINA_OCR_ROI_X1=0.22
@@ -172,18 +172,13 @@ source .venv/bin/activate
 python scripts/test_ocr_capture.py
 ```
 
-Por defecto, si la lectura de camara sale debil pero coincide con el texto esperado, el script puede leer el `.txt` limpio para la prueba:
+El script puede validar una lectura debil contra un texto esperado. Esto ayuda a confirmar que la hoja mostrada corresponde al cuento antes de leer una version limpia.
 
-```text
-fallback_text/el_cuervo_y_la_jarra.txt
-```
-
-Esto no se usa cuando la hoja claramente es otro texto. Puedes cambiarlo o apagarlo:
+Puedes cambiar el archivo de texto esperado o ajustar el umbral:
 
 ```bash
-python scripts/test_ocr_capture.py --expected-text fallback_text/otra_hoja.txt
-python scripts/test_ocr_capture.py --no-expected-fallback
-python scripts/test_ocr_capture.py --expected-min-similarity 0.55
+python scripts/test_ocr_capture.py --expected-text ruta/al/texto.txt
+python scripts/test_ocr_capture.py --expected-min-similarity 0.45
 ```
 
 Si detecta texto util, el script lo lee con Piper usando el mismo motor de voz de la app. Para diagnostico sin audio:
@@ -197,7 +192,7 @@ La ventana muestra una guia de enfoque. Usa este flujo:
 - Si la camara se ve girada, presiona `R` hasta verla derecha. Copia ese valor a `LUMINA_CAMERA_ROTATION` en `.env`.
 - El contorno verde indica que la hoja fue detectada automaticamente.
 - El rectangulo azul/naranja de "REGION QUE SE VA A LEER" debe caer sobre las letras. Si cae sobre la imagen, fondo, mano o borde, el problema es deteccion de region.
-- El rectangulo amarillo es solo guia/fallback si no se detecta la hoja; no debe ser obligatorio para una prueba real sin preview.
+- El rectangulo amarillo es solo una guia visual; no debe ser obligatorio para una prueba real sin preview.
 - Presiona `F` para enfocar.
 - Espera a que indique enfoque aceptable o bueno.
 - Presiona `ESPACIO` para capturar.
