@@ -166,6 +166,12 @@ source .venv/bin/activate
 python scripts/test_ocr_capture.py
 ```
 
+Por defecto, si detecta texto util, el script lo lee con Piper usando el mismo motor de voz de la app. Para diagnostico sin audio:
+
+```bash
+python scripts/test_ocr_capture.py --no-speech
+```
+
 La ventana muestra una guia de enfoque. Usa este flujo:
 
 - Si la camara se ve girada, presiona `R` hasta verla derecha. Copia ese valor a `LUMINA_CAMERA_ROTATION` en `.env`.

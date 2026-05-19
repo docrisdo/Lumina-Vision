@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 from lumina_vision.camera import CameraManager
 from lumina_vision.config import AppConfig
 from lumina_vision.ocr import OCRService
+from lumina_vision.speech import SpeechEngine
 
 
 def _configure_for_page_test(config: AppConfig) -> None:
@@ -27,6 +28,9 @@ def _configure_for_page_test(config: AppConfig) -> None:
     config.ocr_max_width = 1536
     config.ocr_page_mode = True
     config.ocr_fast_mode = True
+    config.enable_tts = True
+    if config.tts_engine.lower() == "auto":
+        config.tts_engine = "piper"
 
 
 def _sharpness_label(sharpness: float) -> tuple[str, tuple[int, int, int]]:
@@ -143,6 +147,11 @@ def main() -> int:
         action="store_true",
         help="Captura directo sin ventana. Util para pruebas sin escritorio.",
     )
+    parser.add_argument(
+        "--no-speech",
+        action="store_true",
+        help="No lee el texto detectado por voz.",
+    )
     args = parser.parse_args()
 
     config = AppConfig.load()
@@ -152,6 +161,9 @@ def main() -> int:
 
     camera = CameraManager(config)
     ocr = OCRService(config)
+    speech = SpeechEngine(config)
+    if not args.no_speech:
+        speech.start()
 
     camera.start()
     try:
@@ -180,6 +192,10 @@ def main() -> int:
 
         print("[Lumina] OCR detecto:")
         print(result.text)
+        if not args.no_speech:
+            print("[Lumina] Leyendo texto con Piper...")
+            speech.speak(result.text, priority=True)
+            speech.wait_until_done()
         print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
         print("[Lumina] Mejores candidatos:")
         for index, candidate in enumerate(candidates[:5], start=1):
@@ -194,6 +210,7 @@ def main() -> int:
         return 0
     finally:
         camera.stop()
+        speech.stop()
         cv2.destroyAllWindows()
 
 

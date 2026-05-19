@@ -139,6 +139,9 @@ class SpeechEngine:
         logger.info("Voz en cola{}: {}", " prioritaria" if priority else "", clean_text)
         self._queue.put(clean_text)
 
+    def wait_until_done(self) -> None:
+        self._queue.join()
+
     def speak_alert(self, text: str) -> None:
         if not self._running or not text.strip():
             return
