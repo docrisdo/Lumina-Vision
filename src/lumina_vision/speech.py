@@ -20,6 +20,7 @@ class SpeechEngine:
         self._queue: "queue.Queue[str]" = queue.Queue()
         self._running = False
         self._thread: threading.Thread | None = None
+        self._object_speech_thread: threading.Thread | None = None
         self._engine_name = self._resolve_engine()
 
     def _resolve_engine(self) -> str:
@@ -152,6 +153,8 @@ class SpeechEngine:
 
     def wait_until_done(self) -> None:
         self._queue.join()
+        if self._object_speech_thread is not None:
+            self._object_speech_thread.join(timeout=self.config.tts_command_timeout_seconds)
 
     def _normalize_speech_text(self, text: str) -> str:
         clean_text = text.strip()
@@ -244,6 +247,30 @@ class SpeechEngine:
             )
             thread.start()
             logger.info("Voz urgente con espeak-ng: {}", clean_text)
+            return
+
+        self.speak(clean_text, priority=True)
+
+    def speak_object(self, text: str) -> None:
+        if not text.strip():
+            return
+
+        clean_text = self._normalize_speech_text(text)
+        if not clean_text:
+            return
+
+        self._clear_queue()
+        if shutil.which("espeak-ng"):
+            if self._object_speech_thread is not None and self._object_speech_thread.is_alive():
+                return
+            self._object_speech_thread = threading.Thread(
+                target=self._speak_with_espeak,
+                args=(clean_text,),
+                name="lumina-object-tts",
+                daemon=True,
+            )
+            self._object_speech_thread.start()
+            logger.info("Voz rapida de objetos con espeak-ng: {}", clean_text)
             return
 
         self.speak(clean_text, priority=True)
@@ -453,6 +480,9 @@ class SpeechEngine:
 
     def stop(self) -> None:
         self._running = False
+        if self._object_speech_thread is not None:
+            self._object_speech_thread.join(timeout=1.0)
+            self._object_speech_thread = None
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None

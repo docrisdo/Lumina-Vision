@@ -292,7 +292,7 @@ class LuminaPipeline:
                 return
             message = self._format_object_message(counter)
             logger.info("Anunciando objetos por voz: {}", message)
-            self.speech.speak(message)
+            self.speech.speak_object(message)
             self._last_object_signature = signature
             self._last_object_speech_at = now_monotonic()
             self._object_speech_gate.mark()

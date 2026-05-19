@@ -1,3 +1,5 @@
+import queue
+
 from lumina_vision.speech import SpeechEngine
 
 
@@ -50,3 +52,28 @@ def test_piper_timeout_allows_model_startup(monkeypatch):
     speech.config = Config()
 
     assert speech._piper_timeout_for_text("El cuervo y la jarra") >= 35.0
+
+
+def test_object_speech_uses_fast_espeak_path(monkeypatch):
+    speech = object.__new__(SpeechEngine)
+
+    class Config:
+        speech_volume = 1.0
+        speech_rate = 170
+        tts_output = "direct"
+        tts_command_timeout_seconds = 15.0
+        speech_max_queue_size = 1
+
+    spoken = []
+    speech.config = Config()
+    speech._queue = queue.Queue()
+    speech._object_speech_thread = None
+
+    monkeypatch.setattr("lumina_vision.speech.shutil.which", lambda command: "espeak-ng" if command == "espeak-ng" else None)
+    monkeypatch.setattr(speech, "_speak_with_espeak", lambda text: spoken.append(text))
+
+    speech.speak_object("Veo una libreta")
+    speech.wait_until_done()
+
+    assert spoken == ["Veo una libreta"]
+    assert speech._queue.empty()

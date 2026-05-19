@@ -110,7 +110,7 @@ def _maybe_speak_detections(
     message = _format_detection_message(detections)
     if message:
         print(f"[Lumina] Voz objetos: {message}")
-        speech.speak(message, priority=True)
+        speech.speak_object(message)
         return signature, now
     return last_signature, last_speech_at
 
