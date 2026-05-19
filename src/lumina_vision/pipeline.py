@@ -254,7 +254,7 @@ class LuminaPipeline:
             and self._ocr_speech_gate.ready()
         ):
             logger.info("Anunciando texto por voz: {}", ocr_text[:160])
-            self.speech.speak(f"Leo: {ocr_text}")
+            self.speech.speak(f"Leo: {ocr_text}", ocr_text=True)
             self._last_ocr_text = ocr_text
             self._last_ocr_speech_at = now_monotonic()
             self._ocr_speech_gate.mark()

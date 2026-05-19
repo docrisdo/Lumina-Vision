@@ -29,6 +29,18 @@ def test_speech_splits_long_text_for_piper():
     assert all(len(chunk) <= 75 for chunk in chunks)
 
 
+def test_speech_smooths_ocr_artifact_periods_between_words():
+    speech = object.__new__(SpeechEngine)
+
+    text = speech._smooth_ocr_reading_text(
+        "Un cuervo sediento encontro. una jarra con agua. en el fondo. Trato de beberla.",
+    )
+
+    assert "encontro una jarra" in text
+    assert "agua en el fondo" in text
+    assert "fondo. Trato" in text
+
+
 def test_piper_timeout_allows_model_startup(monkeypatch):
     speech = object.__new__(SpeechEngine)
 

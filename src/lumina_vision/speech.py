@@ -125,10 +125,12 @@ class SpeechEngine:
             except queue.Empty:
                 break
 
-    def speak(self, text: str, *, priority: bool = False) -> None:
+    def speak(self, text: str, *, priority: bool = False, ocr_text: bool = False) -> None:
         if not self._running or not text.strip():
             return
         clean_text = self._normalize_speech_text(text)
+        if ocr_text:
+            clean_text = self._smooth_ocr_reading_text(clean_text)
         if not clean_text:
             return
         chunks = self._split_speech_chunks(clean_text)
@@ -162,6 +164,16 @@ class SpeechEngine:
             "inteligencia la perseverancia",
             "inteligencia y la perseverancia",
         )
+        return clean_text.strip(" ,.;:")
+
+    def _smooth_ocr_reading_text(self, text: str) -> str:
+        clean_text = text.strip()
+        clean_text = re.sub(
+            r"(?<=[a-záéíóúüñ])\.\s+(?=[a-záéíóúüñ])",
+            " ",
+            clean_text,
+        )
+        clean_text = re.sub(r"\s+", " ", clean_text)
         return clean_text.strip(" ,.;:")
 
     def _split_speech_chunks(self, text: str, *, max_chars: int = 75) -> list[str]:

@@ -195,7 +195,7 @@ def main() -> int:
         print(result.text)
         if not args.no_speech:
             print("[Lumina] Leyendo texto con Piper...")
-            speech.speak(result.text, priority=True)
+            speech.speak(result.text, priority=True, ocr_text=True)
             speech.wait_until_done()
         print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
         print("[Lumina] Mejores candidatos:")
