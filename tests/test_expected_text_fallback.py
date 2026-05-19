@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from scripts.test_ocr_capture import _expected_text_similarity, _should_use_expected_text
 
 
@@ -20,13 +18,9 @@ def test_expected_text_similarity_detects_matching_story_fragment():
 
 
 def test_expected_text_fallback_uses_txt_for_weak_matching_ocr():
-    result = SimpleNamespace(
-        text="cuervo jarra sediento agua fondo comenzo echar piedras",
-        confidence_hint=62.0,
-    )
-
     use_expected, similarity, matches = _should_use_expected_text(
-        result,
+        "cuervo jarra sediento agua fondo comenzo echar piedras",
+        62.0,
         EXPECTED_TEXT,
         min_confidence=90.0,
         min_chars=80,
@@ -39,13 +33,9 @@ def test_expected_text_fallback_uses_txt_for_weak_matching_ocr():
 
 
 def test_expected_text_fallback_rejects_unrelated_text():
-    result = SimpleNamespace(
-        text="la fotosintesis permite que las plantas produzcan energia con luz solar",
-        confidence_hint=55.0,
-    )
-
     use_expected, similarity, matches = _should_use_expected_text(
-        result,
+        "la fotosintesis permite que las plantas produzcan energia con luz solar",
+        55.0,
         EXPECTED_TEXT,
         min_confidence=90.0,
         min_chars=80,
@@ -55,3 +45,18 @@ def test_expected_text_fallback_rejects_unrelated_text():
     assert use_expected is False
     assert similarity < 0.45
     assert matches < 4
+
+
+def test_expected_text_fallback_can_use_weak_text_when_main_ocr_failed():
+    use_expected, similarity, matches = _should_use_expected_text(
+        "cuervo jarra agua fondo piedras",
+        0.0,
+        EXPECTED_TEXT,
+        min_confidence=90.0,
+        min_chars=80,
+        min_similarity=0.45,
+    )
+
+    assert use_expected is True
+    assert similarity >= 0.45
+    assert matches >= 4

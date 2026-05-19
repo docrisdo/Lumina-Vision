@@ -177,6 +177,17 @@ def _run_ocr(ocr: OCRService, frame, debug_dir: Path, prefix: str):
     return candidates, sharpness, result
 
 
+def _weak_ocr_text_for_expected_match(ocr: OCRService, frame) -> tuple[str, float]:
+    try:
+        variant = ocr.best_debug_variant(frame)
+        text, confidence = ocr._text_lines_from_data(variant, 6)
+    except RuntimeError as error:
+        if not ocr._is_tesseract_timeout(error):
+            raise
+        return "", 0.0
+    return text, confidence
+
+
 def _load_expected_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -205,7 +216,8 @@ def _expected_text_similarity(observed_text: str, expected_text: str) -> tuple[f
 
 
 def _should_use_expected_text(
-    result,
+    observed_text: str,
+    confidence_hint: float,
     expected_text: str,
     *,
     min_confidence: float,
@@ -213,13 +225,13 @@ def _should_use_expected_text(
     min_similarity: float,
     min_matches: int = 4,
 ) -> tuple[bool, float, int]:
-    if result is None or not expected_text:
+    if not observed_text.strip() or not expected_text:
         return False, 0.0, 0
-    compact_text = " ".join(result.text.split())
-    camera_text_is_weak = result.confidence_hint < min_confidence or len(compact_text) < min_chars
+    compact_text = " ".join(observed_text.split())
+    camera_text_is_weak = confidence_hint < min_confidence or len(compact_text) < min_chars
     if not camera_text_is_weak:
         return False, 1.0, 0
-    similarity, matches = _expected_text_similarity(result.text, expected_text)
+    similarity, matches = _expected_text_similarity(observed_text, expected_text)
     return similarity >= min_similarity and matches >= min_matches, similarity, matches
 
 
@@ -345,8 +357,16 @@ def main() -> int:
         expected_similarity = None
         expected_matches = None
         expected_text = "" if args.no_expected_fallback else _load_expected_text(args.expected_text)
+        observed_text = result.text if result is not None else ""
+        observed_confidence = result.confidence_hint if result is not None else 0.0
+        if result is None and expected_text:
+            observed_text, observed_confidence = _weak_ocr_text_for_expected_match(ocr, frame)
+            if observed_text:
+                print("[Lumina] OCR principal no acepto texto util, pero se obtuvo texto debil para validar.")
+                print(observed_text)
         use_expected_text, expected_similarity, expected_matches = _should_use_expected_text(
-            result,
+            observed_text,
+            observed_confidence,
             expected_text,
             min_confidence=args.expected_min_confidence,
             min_chars=args.expected_min_chars,
@@ -366,20 +386,30 @@ def main() -> int:
             expected_similarity = None
             expected_matches = None
 
-        if result is None:
+        if result is None and spoken_text is None:
             _print_failed_ocr(debug_dir, sharpness, "ocr")
             return 1
 
-        _print_success_ocr(
-            debug_dir,
-            candidates,
-            result,
-            "ocr",
-            source_name,
-            spoken_text=spoken_text,
-            expected_similarity=expected_similarity,
-            expected_matches=expected_matches,
-        )
+        if result is not None:
+            _print_success_ocr(
+                debug_dir,
+                candidates,
+                result,
+                "ocr",
+                source_name,
+                spoken_text=spoken_text,
+                expected_similarity=expected_similarity,
+                expected_matches=expected_matches,
+            )
+        else:
+            print("[Lumina] OCR detecto coincidencia suficiente con texto esperado:")
+            print(spoken_text)
+            if expected_similarity is not None and expected_matches is not None:
+                print(
+                    f"[Lumina] Similitud con texto esperado: {expected_similarity:.2f} "
+                    f"| coincidencias: {expected_matches}",
+                )
+            print(f"[Lumina] Nitidez: {sharpness:.1f}")
         if not args.no_speech:
             print("[Lumina] Leyendo texto con Piper...")
             speech.speak(spoken_text or result.text, priority=True, ocr_text=True)
