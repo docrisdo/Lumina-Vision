@@ -394,6 +394,23 @@ class LuminaPipeline:
                 cv2.LINE_AA,
             )
 
+        ultrasonic_status = self._format_ultrasonic_preview_status()
+        if ultrasonic_status:
+            ultrasonic_near = (
+                self.ultrasonic.latest_distance_cm is not None
+                and self.ultrasonic.latest_distance_cm <= self.config.ultrasonic_alert_distance_cm
+            )
+            cv2.putText(
+                annotated,
+                ultrasonic_status,
+                (20, annotated.shape[0] - 76),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 80, 255) if ultrasonic_near else (80, 255, 80),
+                2,
+                cv2.LINE_AA,
+            )
+
         with self._ocr_lock:
             reading_box = self._latest_reading_box
         if reading_box is not None:
@@ -421,3 +438,12 @@ class LuminaPipeline:
                 cv2.LINE_AA,
             )
         return annotated
+
+    def _format_ultrasonic_preview_status(self) -> str:
+        if not self.config.enable_ultrasonic:
+            return ""
+        distance = self.ultrasonic.latest_distance_cm
+        if distance is None:
+            return "ULTRASONICO: sin lectura"
+        state = "cerca" if distance <= self.config.ultrasonic_alert_distance_cm else "ok"
+        return f"ULTRASONICO: {distance:.0f} cm | {state}"

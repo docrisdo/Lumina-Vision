@@ -91,10 +91,16 @@ Librerias estandar de Python usadas internamente:
 
 ## Ejecucion Recomendada
 
-Modo lectura con OCR, voz y ultrasonico:
+Modo lectura final con OCR, voz, ultrasonico y preview de monitoreo:
 
 ```bash
 bash scripts/run_reading.sh
+```
+
+Si se corre sin pantalla o como servicio, se puede apagar la ventana:
+
+```bash
+LUMINA_SHOW_PREVIEW=false bash scripts/run_reading.sh
 ```
 
 Modo general:
@@ -307,7 +313,7 @@ Para una version futura de deteccion de objetos mas potente, YOLO exportado a NC
 
 ```env
 LUMINA_WEARABLE_MODE=true
-LUMINA_SHOW_PREVIEW=false
+LUMINA_SHOW_PREVIEW=true
 LUMINA_ENABLE_OCR=true
 LUMINA_ENABLE_TTS=true
 LUMINA_ENABLE_ULTRASONIC=true
@@ -317,11 +323,10 @@ LUMINA_OCR_PAGE_MODE=true
 LUMINA_ULTRASONIC_ALERT_DISTANCE_CM=15
 ```
 
-Para pruebas con ventana:
+Para usarlo sin ventana:
 
 ```env
-LUMINA_WEARABLE_MODE=false
-LUMINA_SHOW_PREVIEW=true
+LUMINA_SHOW_PREVIEW=false
 ```
 
 ## Pruebas Basicas

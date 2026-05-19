@@ -10,8 +10,8 @@ if [[ ! -d .venv ]]; then
 fi
 
 source .venv/bin/activate
-export LUMINA_WEARABLE_MODE=true
-export LUMINA_SHOW_PREVIEW=false
+export LUMINA_WEARABLE_MODE="${LUMINA_WEARABLE_MODE:-false}"
+export LUMINA_SHOW_PREVIEW="${LUMINA_SHOW_PREVIEW:-true}"
 export LUMINA_ENABLE_OBJECT_DETECTION=false
 export LUMINA_ENABLE_OCR=true
 export LUMINA_ENABLE_TTS=true
