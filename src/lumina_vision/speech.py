@@ -20,7 +20,8 @@ class SpeechEngine:
         self._queue: "queue.Queue[str]" = queue.Queue()
         self._running = False
         self._thread: threading.Thread | None = None
-        self._object_speech_thread: threading.Thread | None = None
+        self._busy_lock = threading.Lock()
+        self._speaking = False
         self._engine_name = self._resolve_engine()
 
     def _resolve_engine(self) -> str:
@@ -160,8 +161,6 @@ class SpeechEngine:
 
     def wait_until_done(self) -> None:
         self._queue.join()
-        if self._object_speech_thread is not None:
-            self._object_speech_thread.join(timeout=self.config.tts_command_timeout_seconds)
 
     def _normalize_speech_text(self, text: str) -> str:
         clean_text = text.strip()
@@ -259,28 +258,27 @@ class SpeechEngine:
         self.speak(clean_text, priority=True)
 
     def speak_object(self, text: str) -> None:
-        if not text.strip():
+        if not self._running or not text.strip():
             return
 
         clean_text = self._normalize_speech_text(text)
         if not clean_text:
             return
 
-        self._clear_queue()
-        if shutil.which("espeak-ng"):
-            if self._object_speech_thread is not None and self._object_speech_thread.is_alive():
+        with self._busy_lock:
+            if self._speaking or not self._queue.empty():
+                logger.debug("Voz de objeto omitida porque ya hay voz en curso: {}", clean_text)
                 return
-            self._object_speech_thread = threading.Thread(
-                target=self._speak_with_espeak,
-                args=(clean_text,),
-                name="lumina-object-tts",
-                daemon=True,
-            )
-            self._object_speech_thread.start()
-            logger.info("Voz rapida de objetos con espeak-ng: {}", clean_text)
-            return
 
-        self.speak(clean_text, priority=True)
+        while self._queue.qsize() >= self.config.speech_max_queue_size:
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except queue.Empty:
+                break
+        logger.info("Voz de objeto con Piper: {}", clean_text)
+        self._queue.put(clean_text)
+        return
 
     def _speak_with_espeak(self, text: str, *, rate: int | None = None) -> None:
         amplitude = max(0, min(200, int(self.config.speech_volume * 200)))
@@ -478,18 +476,19 @@ class SpeechEngine:
                 continue
 
             try:
+                with self._busy_lock:
+                    self._speaking = True
                 if self._engine_name == "piper":
                     self._speak_with_piper(text)
             except Exception as exc:
                 logger.exception("Error reproduciendo voz: {}", exc)
             finally:
+                with self._busy_lock:
+                    self._speaking = False
                 self._queue.task_done()
 
     def stop(self) -> None:
         self._running = False
-        if self._object_speech_thread is not None:
-            self._object_speech_thread.join(timeout=1.0)
-            self._object_speech_thread = None
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None

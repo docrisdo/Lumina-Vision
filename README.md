@@ -378,7 +378,7 @@ source .venv/bin/activate
 python scripts/test_object_detection.py
 ```
 
-El script tambien dice por voz lo que detecta, por ejemplo `Veo un libro`. Para que responda rapido, la deteccion de objetos usa `espeak-ng` si esta disponible; Piper se mantiene para OCR y lectura de texto. Para diagnostico sin audio:
+El script tambien dice por voz lo que detecta con Piper, por ejemplo `Veo un libro`. No repite cada frame y omite nuevas frases mientras ya hay voz en curso para evitar que se trabe. Para diagnostico sin audio:
 
 ```bash
 python scripts/test_object_detection.py --no-speech
