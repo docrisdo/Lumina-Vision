@@ -141,7 +141,7 @@ class SpeechEngine:
             clean_text = self._smooth_ocr_reading_text(clean_text)
         if not clean_text:
             return
-        chunks = self._split_speech_chunks(clean_text, max_chars=180 if fluent else 75)
+        chunks = self._split_speech_chunks(clean_text, max_chars=320 if fluent else 75)
         if priority:
             self._clear_queue()
         while self._queue.qsize() >= self.config.speech_max_queue_size:

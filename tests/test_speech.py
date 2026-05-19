@@ -40,10 +40,11 @@ def test_speech_can_use_fluent_chunks_for_clean_expected_text():
         "Este cuento ensena sobre la inteligencia y la perseverancia para resolver problemas."
     )
 
-    chunks = speech._split_speech_chunks(text, max_chars=180)
+    chunks = speech._split_speech_chunks(text, max_chars=320)
 
     assert len(chunks) < len(speech._split_speech_chunks(text))
-    assert all(len(chunk) <= 180 for chunk in chunks)
+    assert len(chunks) <= 2
+    assert all(len(chunk) <= 320 for chunk in chunks)
 
 
 def test_speech_smooths_ocr_artifact_periods_between_words():
