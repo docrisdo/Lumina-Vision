@@ -468,8 +468,9 @@ class OCRService:
         if base_crop.size == 0:
             return crop, (0, 0, width, height)
 
-        gray = cv2.cvtColor(base_crop, cv2.COLOR_BGR2GRAY)
-        dark = cv2.adaptiveThreshold(
+        raw_gray = cv2.cvtColor(base_crop, cv2.COLOR_BGR2GRAY)
+        gray = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8, 8)).apply(raw_gray)
+        adaptive_dark = cv2.adaptiveThreshold(
             gray,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -477,7 +478,28 @@ class OCRService:
             31,
             12,
         )
+        bright_context = cv2.morphologyEx(
+            cv2.inRange(raw_gray, 145, 255),
+            cv2.MORPH_CLOSE,
+            np.ones((21, 21), np.uint8),
+            iterations=1,
+        )
+        bright_context = cv2.erode(
+            bright_context,
+            np.ones((9, 9), np.uint8),
+            iterations=1,
+        )
+        fixed_dark = cv2.bitwise_and(cv2.inRange(raw_gray, 0, 125), bright_context)
+        dark = cv2.bitwise_or(adaptive_dark, fixed_dark)
+        fixed_dark = cv2.morphologyEx(
+            fixed_dark,
+            cv2.MORPH_OPEN,
+            np.ones((2, 2), np.uint8),
+            iterations=1,
+        )
         text_lines = self._text_line_bounds(dark)
+        if len(self._text_line_bounds(fixed_dark)) >= 2:
+            text_lines = self._text_line_bounds(fixed_dark)
         picture_top = self._large_picture_top(dark)
         if picture_top is not None:
             text_lines = [line for line in text_lines if line[1] < picture_top]
@@ -500,6 +522,9 @@ class OCRService:
         return base_crop, base_box
 
     def _text_line_bounds(self, dark_mask: np.ndarray) -> list[tuple[int, int]]:
+        return [(y1, y2) for _x1, y1, _x2, y2 in self._text_line_boxes(dark_mask)]
+
+    def _text_line_boxes(self, dark_mask: np.ndarray) -> list[tuple[int, int, int, int]]:
         height, width = dark_mask.shape[:2]
         line_mask = cv2.morphologyEx(
             dark_mask,
@@ -508,12 +533,16 @@ class OCRService:
             iterations=1,
         )
         line_mask = cv2.dilate(line_mask, np.ones((3, 3), np.uint8), iterations=1)
+        projected_boxes = self._projected_text_line_boxes(line_mask)
+        if projected_boxes:
+            return projected_boxes
+
         contours, _hierarchy = cv2.findContours(
             line_mask,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE,
         )
-        bounds: list[tuple[int, int]] = []
+        boxes: list[tuple[int, int, int, int]] = []
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             area = float(w * h)
@@ -524,12 +553,78 @@ class OCRService:
                 continue
             if density > 0.86:
                 continue
-            bounds.append((y, y + h))
-        return sorted(bounds)
+            boxes.append((x, y, x + w, y + h))
+        return sorted(boxes, key=lambda box: (box[1], box[0]))
+
+    def _projected_text_line_boxes(self, line_mask: np.ndarray) -> list[tuple[int, int, int, int]]:
+        height, width = line_mask.shape[:2]
+        row_counts = np.count_nonzero(line_mask, axis=1)
+        threshold = max(8, int(width * 0.012))
+        active_rows = row_counts >= threshold
+        boxes: list[tuple[int, int, int, int]] = []
+        start: int | None = None
+        for index, is_active in enumerate(active_rows):
+            if is_active and start is None:
+                start = index
+            elif not is_active and start is not None:
+                self._append_projected_line_box(line_mask, start, index, boxes)
+                start = None
+        if start is not None:
+            self._append_projected_line_box(line_mask, start, height, boxes)
+        return boxes
+
+    def _append_projected_line_box(
+        self,
+        line_mask: np.ndarray,
+        y1: int,
+        y2: int,
+        boxes: list[tuple[int, int, int, int]],
+    ) -> None:
+        height, width = line_mask.shape[:2]
+        if y2 - y1 < max(5, int(height * 0.006)):
+            return
+        if y2 - y1 > max(130, int(height * 0.22)):
+            return
+        band = line_mask[y1:y2]
+        cols = np.where(np.count_nonzero(band, axis=0) > 0)[0]
+        if cols.size == 0:
+            return
+        x1 = int(cols[0])
+        x2 = int(cols[-1]) + 1
+        if x2 - x1 < width * 0.12:
+            return
+        boxes.append((x1, y1, x2, y2))
+
+    def _text_block_region(self, frame: np.ndarray, dark_mask: np.ndarray) -> ReadingRegion | None:
+        height, width = frame.shape[:2]
+        line_boxes = self._text_line_boxes(dark_mask)
+        picture_top = self._large_picture_top(dark_mask)
+        if picture_top is not None:
+            line_boxes = [box for box in line_boxes if box[3] < picture_top]
+        if len(line_boxes) < 3:
+            return None
+
+        x1 = max(0, min(box[0] for box in line_boxes))
+        y1 = max(0, min(box[1] for box in line_boxes))
+        x2 = min(width, max(box[2] for box in line_boxes))
+        y2 = min(height, max(box[3] for box in line_boxes))
+        if (y2 - y1) < height * 0.28 or (x2 - x1) < width * 0.1:
+            return None
+
+        expanded = self._expand_box((x1, y1, x2, y2), frame.shape, padding_ratio=0.08)
+        crop = self._crop_box(frame, expanded)
+        crop_dark = dark_mask[expanded[1] : expanded[3], expanded[0] : expanded[2]]
+        dark_density = float(np.count_nonzero(crop_dark)) / max(1.0, float(crop_dark.size))
+        if dark_density < 0.01 or dark_density > 0.38:
+            return None
+
+        line_area = sum((box[2] - box[0]) * (box[3] - box[1]) for box in line_boxes)
+        score = float(line_area) + min(len(line_boxes), 16) * float(height * width) * 0.04
+        return ReadingRegion(crop, expanded, score, "texto")
 
     def _large_picture_top(self, dark_mask: np.ndarray) -> int | None:
         height, width = dark_mask.shape[:2]
-        lower_start = int(height * 0.58)
+        lower_start = int(height * 0.5)
         lower_mask = dark_mask[lower_start:]
         lower_mask = cv2.morphologyEx(
             lower_mask,
@@ -553,7 +648,7 @@ class OCRService:
             )
             if not is_large_picture:
                 continue
-            if lower_start + y < height * 0.66:
+            if lower_start + y < height * 0.52:
                 continue
             top = lower_start + y
             picture_top = top if picture_top is None else min(picture_top, top)
@@ -581,9 +676,9 @@ class OCRService:
     def _text_region(self, frame: np.ndarray) -> ReadingRegion | None:
         height, width = frame.shape[:2]
         frame_area = float(height * width)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
-        dark = cv2.adaptiveThreshold(
+        raw_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(raw_gray)
+        adaptive_dark = cv2.adaptiveThreshold(
             gray,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -591,7 +686,29 @@ class OCRService:
             31,
             12,
         )
+        bright_context = cv2.morphologyEx(
+            cv2.inRange(raw_gray, 145, 255),
+            cv2.MORPH_CLOSE,
+            np.ones((21, 21), np.uint8),
+            iterations=1,
+        )
+        bright_context = cv2.erode(
+            bright_context,
+            np.ones((9, 9), np.uint8),
+            iterations=1,
+        )
+        fixed_dark = cv2.bitwise_and(cv2.inRange(raw_gray, 0, 125), bright_context)
+        dark = cv2.bitwise_or(adaptive_dark, fixed_dark)
         dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8), iterations=1)
+        fixed_dark = cv2.morphologyEx(
+            fixed_dark,
+            cv2.MORPH_OPEN,
+            np.ones((2, 2), np.uint8),
+            iterations=1,
+        )
+        best_region = self._text_block_region(frame, fixed_dark)
+        if best_region is None:
+            best_region = self._text_block_region(frame, dark)
         horizontal_kernel = cv2.getStructuringElement(
             cv2.MORPH_RECT,
             (max(18, width // 42), 3),
@@ -600,7 +717,6 @@ class OCRService:
         grouped = cv2.dilate(grouped, np.ones((7, 7), np.uint8), iterations=2)
 
         contours, _hierarchy = cv2.findContours(grouped, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        best_region: ReadingRegion | None = None
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             area = float(w * h)

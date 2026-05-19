@@ -129,6 +129,54 @@ def test_text_region_prefers_text_lines_over_solid_picture(monkeypatch):
     assert region.box[3] < 440
 
 
+def test_text_region_groups_multiple_separate_lines(monkeypatch):
+    service = _ocr_service(monkeypatch)
+    frame = np.full((900, 700, 3), 235, dtype=np.uint8)
+    y_positions = (130, 220, 310, 400, 490, 580, 670)
+    for index, y in enumerate(y_positions):
+        cv2.putText(
+            frame,
+            f"linea cuento {index}",
+            (90, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.1,
+            (0, 0, 0),
+            3,
+            cv2.LINE_AA,
+        )
+
+    region = service._text_region(frame)
+
+    assert region is not None
+    assert region.source == "texto"
+    assert region.box[1] < min(y_positions)
+    assert region.box[3] > max(y_positions)
+
+
+def test_text_region_detects_narrow_page_inside_frame(monkeypatch):
+    service = _ocr_service(monkeypatch)
+    frame = np.full((864, 1536, 3), 70, dtype=np.uint8)
+    cv2.rectangle(frame, (480, 80), (1060, 820), (235, 235, 235), -1)
+    for index, y in enumerate(range(170, 760, 70)):
+        cv2.putText(
+            frame,
+            f"cuento linea {index}",
+            (520, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (20, 20, 20),
+            2,
+            cv2.LINE_AA,
+        )
+
+    region = service._text_region(frame)
+
+    assert region is not None
+    assert region.source == "texto"
+    assert region.box[1] < 170
+    assert region.box[3] > 730
+
+
 def test_long_text_repair_uses_story_vocabulary(monkeypatch):
     service = _ocr_service(monkeypatch)
 
