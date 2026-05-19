@@ -378,6 +378,12 @@ source .venv/bin/activate
 python scripts/test_object_detection.py
 ```
 
+El script tambien dice por voz lo que detecta, por ejemplo `Veo un libro`. Para diagnostico sin audio:
+
+```bash
+python scripts/test_object_detection.py --no-speech
+```
+
 Probar ultrasonico:
 
 ```bash
