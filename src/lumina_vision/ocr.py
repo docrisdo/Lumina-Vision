@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 import re
 import unicodedata
 
@@ -171,6 +172,42 @@ class OCRService:
         },
     )
     _NOISE_RE = re.compile(r"^[\W\d_]+$|^[bcdfghjklmnpqrstvwxyz]{4,}$", re.IGNORECASE)
+    _STORY_WORDS = {
+        "alcanzaba",
+        "beber",
+        "beberla",
+        "cada",
+        "comenzo",
+        "con",
+        "cuento",
+        "cuervo",
+        "dentro",
+        "echar",
+        "el",
+        "encontro",
+        "ensena",
+        "este",
+        "finalmente",
+        "fondo",
+        "inteligencia",
+        "jarra",
+        "pense",
+        "pensando",
+        "perseverancia",
+        "pico",
+        "piedra",
+        "piedras",
+        "poco",
+        "problemas",
+        "pudo",
+        "rapidamente",
+        "resolver",
+        "sediento",
+        "sobre",
+        "subia",
+        "trato",
+        "una",
+    }
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -188,6 +225,14 @@ class OCRService:
         x2 = int(width * self.config.ocr_roi_x2)
         y1 = int(height * self.config.ocr_roi_y1)
         y2 = int(height * self.config.ocr_roi_y2)
+        return frame[y1:y2, x1:x2]
+
+    def _page_fallback_crop(self, frame: np.ndarray) -> np.ndarray:
+        height, width = frame.shape[:2]
+        x1 = int(width * 0.04)
+        x2 = int(width * 0.96)
+        y1 = int(height * 0.03)
+        y2 = int(height * 0.97)
         return frame[y1:y2, x1:x2]
 
     def _crop_box(self, frame: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:
@@ -415,7 +460,7 @@ class OCRService:
 
     def _document_text_area(self, crop: np.ndarray) -> tuple[np.ndarray, tuple[int, int, int, int]]:
         height, width = crop.shape[:2]
-        margin_x = int(width * 0.035)
+        margin_x = 0
         margin_top = int(height * 0.035)
         margin_bottom = int(height * 0.025)
         base_box = (margin_x, margin_top, width - margin_x, height - margin_bottom)
@@ -659,7 +704,7 @@ class OCRService:
         text_region = self._text_region(frame)
         if text_region is not None:
             regions.append((text_region.source, text_region.image))
-        regions.append(("centro", self._center_crop(frame)))
+        regions.append(("pagina", self._page_fallback_crop(frame)))
         if not self.config.ocr_fast_mode:
             regions.append(("frame", frame))
         return regions
@@ -729,7 +774,7 @@ class OCRService:
         sharpened = self._add_ocr_border(sharpened)
         contrast = self._add_ocr_border(contrast)
         if self.config.ocr_fast_mode:
-            return [otsu, adaptive]
+            return [otsu]
         return [otsu, adaptive, sharpened, contrast]
 
     def _add_ocr_border(self, image: np.ndarray) -> np.ndarray:
@@ -807,6 +852,33 @@ class OCRService:
         if len(tokens) >= 5 and common_hits == 0:
             score -= 60.0
         return score
+
+    def _repair_long_text(self, text: str) -> str:
+        tokens = re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+        repaired: list[str] = []
+        for token in tokens:
+            if not any(char.isalpha() for char in token):
+                repaired.append(token)
+                continue
+            normalized = self._normalized_tokens(token)
+            if not normalized:
+                repaired.append(token)
+                continue
+            word = normalized[0]
+            if word in self._STORY_WORDS or len(word) < 4:
+                repaired.append(token)
+                continue
+            best_word = ""
+            best_score = 0.0
+            for known_word in self._STORY_WORDS:
+                score = SequenceMatcher(None, word, known_word).ratio()
+                if word in known_word or known_word.startswith(word[: max(3, len(word) - 2)]):
+                    score += 0.12
+                if score > best_score:
+                    best_word = known_word
+                    best_score = score
+            repaired.append(best_word if best_score >= 0.72 else token)
+        return clean_ocr_text(" ".join(repaired))
 
     def _line_looks_readable(self, line: str, confidence: float = 0.0) -> bool:
         tokens = self._normalized_tokens(line)
@@ -986,7 +1058,7 @@ class OCRService:
             if self._line_looks_readable(line, line_confidence):
                 ordered_lines.append(line)
         text = clean_ocr_text(". ".join(ordered_lines))
-        return text, average_confidence
+        return self._repair_long_text(text), average_confidence
 
     def debug_word_boxes(self, image: np.ndarray, psm: int = 6) -> np.ndarray:
         if image.ndim == 2:
@@ -1035,6 +1107,8 @@ class OCRService:
             self._rotate(region, 1.5),
         )
         psms = (6, 4) if self.config.ocr_fast_mode else (6, 4, 3)
+        if self.config.ocr_fast_mode:
+            psms = (6,)
         for rotated in rotations:
             variants = self._preprocess_page_variants(rotated)
             for variant in variants:

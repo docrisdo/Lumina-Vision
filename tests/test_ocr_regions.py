@@ -55,6 +55,8 @@ def test_fast_mode_does_not_try_full_frame(monkeypatch):
     sources = [source for source, _region in service._ocr_regions(frame)]
 
     assert "frame" not in sources
+    assert "pagina" in sources
+    assert "centro" not in sources
 
 
 def test_document_text_trim_keeps_lower_story_text(monkeypatch):
@@ -125,3 +127,19 @@ def test_text_region_prefers_text_lines_over_solid_picture(monkeypatch):
 
     assert region is not None
     assert region.box[3] < 440
+
+
+def test_long_text_repair_uses_story_vocabulary(monkeypatch):
+    service = _ocr_service(monkeypatch)
+
+    repaired = service._repair_long_text(
+        "cuervo la jarra seyo sediento encon ra con un poco de ondo "
+        "nsando rapidamente menzo echar piedre",
+    )
+
+    assert "cuervo" in repaired
+    assert "jarra" in repaired
+    assert "sediento" in repaired
+    assert "fondo" in repaired
+    assert "pensando" in repaired
+    assert "echar" in repaired
