@@ -18,6 +18,8 @@ from lumina_vision.config import AppConfig
 from lumina_vision.ocr import OCRService
 from lumina_vision.speech import SpeechEngine
 
+DEFAULT_FALLBACK_IMAGE = ROOT_DIR / "fallback_text" / "el_cuervo_y_la_jarra.png"
+
 
 def _configure_for_page_test(config: AppConfig) -> None:
     config.camera_width = 1536
@@ -141,6 +143,65 @@ def _preview_capture(camera: CameraManager, ocr: OCRService):
             return frame
 
 
+def _write_debug_images(ocr: OCRService, frame, debug_dir: Path, prefix: str) -> None:
+    cv2.imwrite(str(debug_dir / f"{prefix}_original.jpg"), frame)
+    for name, image in ocr.debug_variants(frame).items():
+        cv2.imwrite(str(debug_dir / f"{prefix}_{name}.jpg"), image)
+
+
+def _run_ocr(ocr: OCRService, frame, debug_dir: Path, prefix: str):
+    _write_debug_images(ocr, frame, debug_dir, prefix)
+    candidates, sharpness = ocr.extract_candidates(frame)
+    result = ocr.extract_text(frame)
+    return candidates, sharpness, result
+
+
+def _load_fallback_image(path: Path):
+    image = cv2.imread(str(path))
+    if image is None:
+        raise FileNotFoundError(f"No se pudo abrir la imagen fallback: {path}")
+    return image
+
+
+def _should_use_fallback(result, *, min_confidence: float, min_chars: int, force: bool) -> bool:
+    if force:
+        return True
+    if result is None:
+        return True
+    compact_text = " ".join(result.text.split())
+    return result.confidence_hint < min_confidence or len(compact_text) < min_chars
+
+
+def _print_failed_ocr(debug_dir: Path, sharpness: float, prefix: str) -> None:
+    print("[Lumina] OCR no detecto texto util.")
+    print(f"[Lumina] Imagen guardada en: {debug_dir / f'{prefix}_original.jpg'}")
+    print(f"[Lumina] Nitidez: {sharpness:.1f}")
+    print(f"[Lumina] Variantes guardadas en: {debug_dir / f'{prefix}_ocr_*_variant_*.jpg'}")
+    print(f"[Lumina] Regiones guardadas en: {debug_dir / f'{prefix}_ocr_region_*.jpg'}")
+    print(f"[Lumina] Mejor variante guardada en: {debug_dir / f'{prefix}_ocr_best_for_tesseract.jpg'}")
+    print("[Lumina] Prueba con hoja bien iluminada, centrada, a 25-45 cm y sin moverla.")
+    print(
+        "[Lumina] Diagnostico pagina: "
+        f"tesseract {debug_dir / f'{prefix}_ocr_best_for_tesseract.jpg'} stdout -l spa+eng --psm 6",
+    )
+
+
+def _print_success_ocr(debug_dir: Path, candidates, result, prefix: str, source_name: str) -> None:
+    print(f"[Lumina] OCR detecto ({source_name}):")
+    print(result.text)
+    print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
+    print("[Lumina] Mejores candidatos:")
+    for index, candidate in enumerate(candidates[:5], start=1):
+        print(
+            f"  {index}. fuente={candidate.source} prioridad={candidate.priority} "
+            f"conf={candidate.confidence_hint:.1f}: {candidate.text[:120]}",
+        )
+    print(f"[Lumina] Imagen guardada en: {debug_dir / f'{prefix}_original.jpg'}")
+    print(f"[Lumina] Variantes guardadas en: {debug_dir / f'{prefix}_ocr_*_variant_*.jpg'}")
+    print(f"[Lumina] Regiones guardadas en: {debug_dir / f'{prefix}_ocr_region_*.jpg'}")
+    print(f"[Lumina] Mejor variante guardada en: {debug_dir / f'{prefix}_ocr_best_for_tesseract.jpg'}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Captura una imagen y prueba OCR.")
     parser.add_argument(
@@ -152,6 +213,34 @@ def main() -> int:
         "--no-speech",
         action="store_true",
         help="No lee el texto detectado por voz.",
+    )
+    parser.add_argument(
+        "--fallback-image",
+        type=Path,
+        default=DEFAULT_FALLBACK_IMAGE,
+        help="Imagen local que se usara como plan B si la camara no detecta texto util.",
+    )
+    parser.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="No usa imagen plan B aunque exista.",
+    )
+    parser.add_argument(
+        "--force-fallback",
+        action="store_true",
+        help="Usa la imagen plan B aunque la camara detecte texto.",
+    )
+    parser.add_argument(
+        "--fallback-min-confidence",
+        type=float,
+        default=90.0,
+        help="Confianza minima para aceptar la lectura de camara sin usar plan B.",
+    )
+    parser.add_argument(
+        "--fallback-min-chars",
+        type=int,
+        default=40,
+        help="Caracteres minimos para aceptar la lectura de camara sin usar plan B.",
     )
     args = parser.parse_args()
 
@@ -175,39 +264,43 @@ def main() -> int:
             frame = camera.read()
         else:
             frame = _preview_capture(camera, ocr)
-        for name, image in ocr.debug_variants(frame).items():
-            cv2.imwrite(str(debug_dir / f"{name}.jpg"), image)
 
-        candidates, sharpness = ocr.extract_candidates(frame)
-        result = ocr.extract_text(frame)
+        candidates, sharpness, result = _run_ocr(ocr, frame, debug_dir, "ocr")
+        source_name = "camara"
+        fallback_path = args.fallback_image
+        fallback_available = fallback_path.exists() and not args.no_fallback
+        if _should_use_fallback(
+            result,
+            min_confidence=args.fallback_min_confidence,
+            min_chars=args.fallback_min_chars,
+            force=args.force_fallback,
+        ):
+            if fallback_available:
+                print(f"[Lumina] Usando imagen plan B: {fallback_path}")
+                fallback_frame = _load_fallback_image(fallback_path)
+                candidates, sharpness, result = _run_ocr(ocr, fallback_frame, debug_dir, "fallback")
+                source_name = "imagen plan B"
+            elif result is None:
+                _print_failed_ocr(debug_dir, sharpness, "ocr")
+                return 1
+            else:
+                print("[Lumina] La lectura de camara salio debil, pero no hay imagen plan B disponible.")
+
         if result is None:
-            print("[Lumina] OCR no detecto texto util.")
-            print(f"[Lumina] Imagen guardada en: {debug_dir / 'ocr_original.jpg'}")
-            print(f"[Lumina] Nitidez: {sharpness:.1f}")
-            print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_*_variant_*.jpg'}")
-            print(f"[Lumina] Regiones guardadas en: {debug_dir / 'ocr_region_*.jpg'}")
-            print(f"[Lumina] Mejor variante guardada en: {debug_dir / 'ocr_best_for_tesseract.jpg'}")
-            print("[Lumina] Prueba con hoja bien iluminada, centrada, a 25-45 cm y sin moverla.")
-            print("[Lumina] Diagnostico pagina: tesseract debug_ocr/ocr_best_for_tesseract.jpg stdout -l spa+eng --psm 6")
+            _print_failed_ocr(debug_dir, sharpness, "fallback" if source_name == "imagen plan B" else "ocr")
             return 1
 
-        print("[Lumina] OCR detecto:")
-        print(result.text)
+        _print_success_ocr(
+            debug_dir,
+            candidates,
+            result,
+            "fallback" if source_name == "imagen plan B" else "ocr",
+            source_name,
+        )
         if not args.no_speech:
             print("[Lumina] Leyendo texto con Piper...")
             speech.speak(result.text, priority=True, ocr_text=True)
             speech.wait_until_done()
-        print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
-        print("[Lumina] Mejores candidatos:")
-        for index, candidate in enumerate(candidates[:5], start=1):
-            print(
-                f"  {index}. fuente={candidate.source} prioridad={candidate.priority} "
-                f"conf={candidate.confidence_hint:.1f}: {candidate.text[:120]}",
-            )
-        print(f"[Lumina] Imagen guardada en: {debug_dir / 'ocr_original.jpg'}")
-        print(f"[Lumina] Variantes guardadas en: {debug_dir / 'ocr_*_variant_*.jpg'}")
-        print(f"[Lumina] Regiones guardadas en: {debug_dir / 'ocr_region_*.jpg'}")
-        print(f"[Lumina] Mejor variante guardada en: {debug_dir / 'ocr_best_for_tesseract.jpg'}")
         return 0
     finally:
         camera.stop()

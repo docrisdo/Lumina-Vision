@@ -172,7 +172,22 @@ source .venv/bin/activate
 python scripts/test_ocr_capture.py
 ```
 
-Por defecto, si detecta texto util, el script lo lee con Piper usando el mismo motor de voz de la app. Para diagnostico sin audio:
+Por defecto, si la camara no detecta texto util o la lectura sale con baja confianza, el script usa como plan B la imagen local:
+
+```text
+fallback_text/el_cuervo_y_la_jarra.png
+```
+
+Puedes cambiarla, apagarla o forzarla:
+
+```bash
+python scripts/test_ocr_capture.py --fallback-image fallback_text/otra_hoja.png
+python scripts/test_ocr_capture.py --no-fallback
+python scripts/test_ocr_capture.py --force-fallback
+python scripts/test_ocr_capture.py --fallback-min-confidence 92
+```
+
+Si detecta texto util, el script lo lee con Piper usando el mismo motor de voz de la app. Para diagnostico sin audio:
 
 ```bash
 python scripts/test_ocr_capture.py --no-speech
@@ -190,13 +205,15 @@ La ventana muestra una guia de enfoque. Usa este flujo:
 
 Archivos de diagnostico:
 
-- `debug_ocr/ocr_original.jpg`: captura cruda.
-- `debug_ocr/ocr_best_for_tesseract.jpg`: variante para texto grande.
-- `debug_ocr/ocr_word_boxes_best.jpg`: palabras que Tesseract acepto con confianza alta. Verde significa palabra util; rojo significa posible ruido.
-- `debug_ocr/ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo el bloque de texto recortado dentro del documento si se detecta.
-- `debug_ocr/ocr_*_page_variant_*.jpg`: variantes para lectura de pagina.
+- `debug_ocr/ocr_original.jpg`: captura cruda de camara.
+- `debug_ocr/ocr_ocr_best_for_tesseract.jpg`: mejor variante de camara para Tesseract.
+- `debug_ocr/fallback_original.jpg`: imagen plan B cargada, si se uso.
+- `debug_ocr/fallback_ocr_best_for_tesseract.jpg`: mejor variante de la imagen plan B.
+- `debug_ocr/*_ocr_word_boxes_best.jpg`: palabras que Tesseract acepto con confianza alta. Verde significa palabra util; rojo significa posible ruido.
+- `debug_ocr/*_ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo el bloque de texto recortado dentro del documento si se detecta.
+- `debug_ocr/*_ocr_*_page_variant_*.jpg`: variantes para lectura de pagina.
 
-Si `ocr_best_for_tesseract.jpg` se ve claro pero `ocr_word_boxes_best.jpg` casi no marca palabras, el problema es de preprocesamiento/Tesseract. Si las cajas aparecen sobre fondo, manos o bordes, el problema es de deteccion de region. Si el texto se ve borroso en la ventana, primero calibra enfoque.
+Si la mejor variante para Tesseract se ve clara pero el archivo de cajas de palabras casi no marca palabras, el problema es de preprocesamiento/Tesseract. Si las cajas aparecen sobre fondo, manos o bordes, el problema es de deteccion de region. Si el texto se ve borroso en la ventana, primero calibra enfoque.
 
 ## Calibrar Enfoque
 
