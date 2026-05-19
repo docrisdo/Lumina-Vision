@@ -23,6 +23,8 @@ from lumina_vision.speech import SpeechEngine
 
 SCHOOL_OBJECT_PRIORITY = {
     "libro",
+    "libreta",
+    "cuaderno",
     "mochila",
     "laptop",
     "celular",

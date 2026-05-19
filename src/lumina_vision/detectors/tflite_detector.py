@@ -214,8 +214,73 @@ class ObjectDetector:
                 ),
             )
 
+        detections.extend(self._notebook_fallback_detections(frame, detections))
         detections.sort(key=lambda item: item.score, reverse=True)
         return detections[: self.config.detection_max_results]
+
+    def _notebook_fallback_detections(
+        self,
+        frame: np.ndarray,
+        detections: list[Detection],
+    ) -> list[Detection]:
+        if not self.config.school_mode:
+            return []
+        if any(detection.label in {"libro", "libreta", "cuaderno"} for detection in detections):
+            return []
+
+        frame_height, frame_width = frame.shape[:2]
+        frame_area = float(frame_height * frame_width)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 45, 130)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        candidates: list[Detection] = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            area_ratio = area / max(1.0, frame_area)
+            if not 0.08 <= area_ratio <= 0.75:
+                continue
+
+            perimeter = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, 0.035 * perimeter, True)
+            if len(approx) < 4 or len(approx) > 8:
+                continue
+
+            x, y, width, height = cv2.boundingRect(approx)
+            if width < frame_width * 0.18 or height < frame_height * 0.18:
+                continue
+
+            aspect_ratio = width / max(1, height)
+            if not 0.35 <= aspect_ratio <= 1.65:
+                continue
+
+            extent = area / max(1.0, float(width * height))
+            if extent < 0.38:
+                continue
+
+            crop = frame[y : y + height, x : x + width]
+            if crop.size == 0:
+                continue
+            crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            brightness = float(np.mean(crop_gray))
+            contrast = float(np.std(crop_gray))
+            if brightness < 35 or contrast < 18:
+                continue
+
+            confidence = min(0.82, 0.55 + area_ratio * 0.6 + min(0.12, contrast / 500.0))
+            candidates.append(
+                Detection(
+                    label="libreta",
+                    score=confidence,
+                    box=(x, y, x + width, y + height),
+                ),
+            )
+
+        candidates.sort(key=lambda detection: detection.score, reverse=True)
+        return candidates[:1]
 
     def _normalize_outputs(
         self,

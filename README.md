@@ -384,6 +384,8 @@ El script tambien dice por voz lo que detecta, por ejemplo `Veo un libro`. Para 
 python scripts/test_object_detection.py --no-speech
 ```
 
+En modo escolar, si el modelo TFLite no reconoce una libreta como `libro`, hay un respaldo visual que busca una forma grande tipo cuaderno y la anuncia como `libreta`.
+
 Probar ultrasonico:
 
 ```bash
