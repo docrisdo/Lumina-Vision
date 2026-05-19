@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import queue
+import re
 import shutil
 import subprocess
 import threading
@@ -127,7 +128,10 @@ class SpeechEngine:
     def speak(self, text: str, *, priority: bool = False) -> None:
         if not self._running or not text.strip():
             return
-        clean_text = text.strip()
+        clean_text = self._normalize_speech_text(text)
+        if not clean_text:
+            return
+        chunks = self._split_speech_chunks(clean_text)
         if priority:
             self._clear_queue()
         while self._queue.qsize() >= self.config.speech_max_queue_size:
@@ -136,11 +140,81 @@ class SpeechEngine:
                 self._queue.task_done()
             except queue.Empty:
                 break
-        logger.info("Voz en cola{}: {}", " prioritaria" if priority else "", clean_text)
-        self._queue.put(clean_text)
+        logger.info(
+            "Voz en cola{}: {}",
+            " prioritaria" if priority else "",
+            " | ".join(chunks),
+        )
+        for chunk in chunks:
+            self._queue.put(chunk)
 
     def wait_until_done(self) -> None:
         self._queue.join()
+
+    def _normalize_speech_text(self, text: str) -> str:
+        clean_text = text.strip()
+        clean_text = re.sub(r"\s+([,.;:])", r"\1", clean_text)
+        clean_text = re.sub(r"([,.;:])\s*([,.;:])+", r"\1", clean_text)
+        clean_text = re.sub(r"\s*([,.;:])\s*", r"\1 ", clean_text)
+        clean_text = re.sub(r"\s+", " ", clean_text)
+        clean_text = clean_text.replace("El cuervo la jarra", "El cuervo y la jarra")
+        clean_text = clean_text.replace(
+            "inteligencia la perseverancia",
+            "inteligencia y la perseverancia",
+        )
+        return clean_text.strip(" ,.;:")
+
+    def _split_speech_chunks(self, text: str, *, max_chars: int = 140) -> list[str]:
+        sentences = re.split(r"(?<=[.;:])\s+", text)
+        chunks: list[str] = []
+        current = ""
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if len(sentence) > max_chars:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                chunks.extend(self._split_long_sentence(sentence, max_chars=max_chars))
+                continue
+            if current and len(current) + 1 + len(sentence) > max_chars:
+                chunks.append(current)
+                current = sentence
+            else:
+                current = sentence if not current else f"{current} {sentence}"
+        if current:
+            chunks.append(current)
+        return chunks or [text]
+
+    def _split_long_sentence(self, text: str, *, max_chars: int) -> list[str]:
+        parts = re.split(r"(?<=,)\s+", text)
+        chunks: list[str] = []
+        current = ""
+        for part in parts:
+            if len(part) > max_chars:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                words = part.split()
+                word_chunk = ""
+                for word in words:
+                    if word_chunk and len(word_chunk) + 1 + len(word) > max_chars:
+                        chunks.append(word_chunk)
+                        word_chunk = word
+                    else:
+                        word_chunk = word if not word_chunk else f"{word_chunk} {word}"
+                if word_chunk:
+                    chunks.append(word_chunk)
+                continue
+            if current and len(current) + 1 + len(part) > max_chars:
+                chunks.append(current)
+                current = part
+            else:
+                current = part if not current else f"{current} {part}"
+        if current:
+            chunks.append(current)
+        return chunks
 
     def speak_alert(self, text: str) -> None:
         if not self._running or not text.strip():

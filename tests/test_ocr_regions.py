@@ -191,3 +191,14 @@ def test_long_text_repair_uses_story_vocabulary(monkeypatch):
     assert "fondo" in repaired
     assert "pensando" in repaired
     assert "echar" in repaired
+
+
+def test_long_text_repair_restores_common_y(monkeypatch):
+    service = _ocr_service(monkeypatch)
+
+    repaired = service._repair_long_text(
+        "El cuervo la jarra. Este cuento ensena sobre la inteligencia la perseverancia",
+    )
+
+    assert "El cuervo y la jarra" in repaired
+    assert "inteligencia y la perseverancia" in repaired

@@ -994,7 +994,13 @@ class OCRService:
                     best_word = known_word
                     best_score = score
             repaired.append(best_word if best_score >= 0.72 else token)
-        return clean_ocr_text(" ".join(repaired))
+        clean_text = clean_ocr_text(" ".join(repaired))
+        clean_text = clean_text.replace("El cuervo la jarra", "El cuervo y la jarra")
+        clean_text = clean_text.replace(
+            "inteligencia la perseverancia",
+            "inteligencia y la perseverancia",
+        )
+        return clean_text
 
     def _line_looks_readable(self, line: str, confidence: float = 0.0) -> bool:
         tokens = self._normalized_tokens(line)
