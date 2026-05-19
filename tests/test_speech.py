@@ -23,7 +23,18 @@ def test_speech_splits_long_text_for_piper():
         "Este cuento ensena sobre la inteligencia y la perseverancia para resolver problemas."
     )
 
-    chunks = speech._split_speech_chunks(text, max_chars=90)
+    chunks = speech._split_speech_chunks(text)
 
     assert len(chunks) > 1
-    assert all(len(chunk) <= 90 for chunk in chunks)
+    assert all(len(chunk) <= 75 for chunk in chunks)
+
+
+def test_piper_timeout_allows_model_startup(monkeypatch):
+    speech = object.__new__(SpeechEngine)
+
+    class Config:
+        tts_command_timeout_seconds = 15.0
+
+    speech.config = Config()
+
+    assert speech._piper_timeout_for_text("El cuervo y la jarra") >= 35.0

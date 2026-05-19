@@ -164,7 +164,7 @@ class SpeechEngine:
         )
         return clean_text.strip(" ,.;:")
 
-    def _split_speech_chunks(self, text: str, *, max_chars: int = 140) -> list[str]:
+    def _split_speech_chunks(self, text: str, *, max_chars: int = 75) -> list[str]:
         sentences = re.split(r"(?<=[.;:])\s+", text)
         chunks: list[str] = []
         current = ""
@@ -381,6 +381,7 @@ class SpeechEngine:
         ]
         last_stdout = ""
         last_stderr = ""
+        command_timeout = self._piper_timeout_for_text(text)
         try:
             for command in piper_commands:
                 cached_output.unlink(missing_ok=True)
@@ -390,7 +391,7 @@ class SpeechEngine:
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=self.config.tts_command_timeout_seconds,
+                    timeout=command_timeout,
                 )
                 last_stdout = result.stdout.strip()
                 last_stderr = result.stderr.strip()
@@ -416,6 +417,12 @@ class SpeechEngine:
         )
         cached_output.unlink(missing_ok=True)
         return None
+
+    def _piper_timeout_for_text(self, text: str) -> float:
+        return max(
+            self.config.tts_command_timeout_seconds,
+            35.0 + len(text.strip()) * 0.08,
+        )
 
     def _worker(self) -> None:
         while self._running:

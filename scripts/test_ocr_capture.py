@@ -29,6 +29,7 @@ def _configure_for_page_test(config: AppConfig) -> None:
     config.ocr_page_mode = True
     config.ocr_fast_mode = True
     config.enable_tts = True
+    config.tts_command_timeout_seconds = max(config.tts_command_timeout_seconds, 45.0)
     if config.tts_engine.lower() == "auto":
         config.tts_engine = "piper"
 
