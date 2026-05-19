@@ -172,6 +172,12 @@ source .venv/bin/activate
 python scripts/test_ocr_capture.py
 ```
 
+Ese comando mantiene la validacion con texto esperado. Para probar OCR libre, sin comparar contra el `.txt`:
+
+```bash
+python scripts/test_ocr_capture_libre.py
+```
+
 El script puede validar una lectura debil contra un texto esperado. Esto ayuda a confirmar que la hoja mostrada corresponde al cuento antes de leer una version limpia.
 
 Puedes cambiar el archivo de texto esperado o ajustar el umbral:
