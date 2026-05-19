@@ -76,17 +76,18 @@ class UltrasonicMonitor:
             time.sleep(self.config.ultrasonic_poll_interval_seconds)
 
     def close_obstacle_confirmed(self) -> bool:
-        distance = self.latest_distance_cm
-        if distance is None or distance > self.config.ultrasonic_alert_distance_cm:
-            self._close_since = None
-            return False
+        with self._lock:
+            distance = self._latest_distance_cm
+            if distance is None or distance > self.config.ultrasonic_alert_distance_cm:
+                self._close_since = None
+                return False
 
-        now = time.monotonic()
-        if self._close_since is None:
-            self._close_since = now
-            return False
+            now = time.monotonic()
+            if self._close_since is None:
+                self._close_since = now
+                return False
 
-        return (now - self._close_since) >= self.config.ultrasonic_confirm_seconds
+            return (now - self._close_since) >= self.config.ultrasonic_confirm_seconds
 
     def stop(self) -> None:
         self._running = False

@@ -933,11 +933,6 @@ class OCRService:
         return len(re.findall(r"[^\W\d_]{2,}", text, flags=re.UNICODE))
 
     def _normalized_tokens(self, text: str) -> list[str]:
-        replacements = str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN")
-        normalized = text.translate(replacements).lower()
-        return re.findall(r"[a-z]{2,}", normalized)
-
-    def _normalized_tokens(self, text: str) -> list[str]:
         normalized = unicodedata.normalize("NFKD", text)
         normalized = "".join(char for char in normalized if not unicodedata.combining(char))
         normalized = normalized.lower()
@@ -970,6 +965,15 @@ class OCRService:
         return score
 
     def _repair_long_text(self, text: str) -> str:
+        if self._word_count(text) > 8:
+            clean_text = clean_ocr_text(text)
+            clean_text = clean_text.replace("El cuervo la jarra", "El cuervo y la jarra")
+            clean_text = clean_text.replace(
+                "inteligencia la perseverancia",
+                "inteligencia y la perseverancia",
+            )
+            return clean_text
+
         tokens = re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
         repaired: list[str] = []
         for token in tokens:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 import threading
+import time
 
 import cv2
 from loguru import logger
@@ -99,7 +100,12 @@ class LuminaPipeline:
 
         try:
             while True:
-                frame = self.camera.read()
+                try:
+                    frame = self.camera.read()
+                except Exception as exc:
+                    logger.warning("Error leyendo frame de camara: {}. Reintentando...", exc)
+                    time.sleep(0.1)
+                    continue
                 ocr_text = ""
 
                 self._frame_index += 1

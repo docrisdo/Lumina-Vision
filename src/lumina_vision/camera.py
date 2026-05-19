@@ -141,7 +141,7 @@ class CameraManager:
                     "AfTrigger": controls.AfTriggerEnum.Start,
                 },
             )
-            time.sleep(max(1.0, self.config.camera_focus_settle_seconds))
+        time.sleep(max(1.0, self.config.camera_focus_settle_seconds))
 
     def _start_opencv(self) -> None:
         capture = cv2.VideoCapture(0)

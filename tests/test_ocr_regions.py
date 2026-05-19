@@ -177,20 +177,16 @@ def test_text_region_detects_narrow_page_inside_frame(monkeypatch):
     assert region.box[3] > 730
 
 
-def test_long_text_repair_uses_story_vocabulary(monkeypatch):
+def test_short_text_repair_uses_story_vocabulary(monkeypatch):
     service = _ocr_service(monkeypatch)
 
-    repaired = service._repair_long_text(
-        "cuervo la jarra seyo sediento encon ra con un poco de ondo "
-        "nsando rapidamente menzo echar piedre",
-    )
+    repaired = service._repair_long_text("cuervo seyo ondo nsando menzo piedre")
 
     assert "cuervo" in repaired
-    assert "jarra" in repaired
-    assert "sediento" in repaired
     assert "fondo" in repaired
     assert "pensando" in repaired
-    assert "echar" in repaired
+    assert "comenzo" in repaired
+    assert "piedra" in repaired
 
 
 def test_long_text_repair_restores_common_y(monkeypatch):

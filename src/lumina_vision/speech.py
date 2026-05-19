@@ -261,7 +261,7 @@ class SpeechEngine:
             str(amplitude),
         ]
 
-        if self.config.tts_output.lower() != "direct" or rate is not None:
+        if self.config.tts_output.lower() != "direct":
             with tempfile.NamedTemporaryFile(prefix="lumina_espeak_", suffix=".wav", delete=False) as temp_file:
                 temp_path = Path(temp_file.name)
             result = subprocess.run(

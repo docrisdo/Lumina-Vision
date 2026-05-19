@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
 import sys
 import time
+import unicodedata
 
 import cv2
 
@@ -18,7 +20,26 @@ from lumina_vision.config import AppConfig
 from lumina_vision.ocr import OCRService
 from lumina_vision.speech import SpeechEngine
 
-DEFAULT_FALLBACK_IMAGE = ROOT_DIR / "fallback_text" / "el_cuervo_y_la_jarra.png"
+DEFAULT_EXPECTED_TEXT = ROOT_DIR / "fallback_text" / "el_cuervo_y_la_jarra.txt"
+EXPECTED_STOPWORDS = {
+    "con",
+    "del",
+    "dentro",
+    "el",
+    "en",
+    "este",
+    "hasta",
+    "la",
+    "las",
+    "los",
+    "para",
+    "pero",
+    "por",
+    "que",
+    "sobre",
+    "una",
+    "uno",
+}
 
 
 def _configure_for_page_test(config: AppConfig) -> None:
@@ -156,16 +177,53 @@ def _run_ocr(ocr: OCRService, frame, debug_dir: Path, prefix: str):
     return candidates, sharpness, result
 
 
-def _load_fallback_image(path: Path):
-    image = cv2.imread(str(path))
-    if image is None:
-        raise FileNotFoundError(f"No se pudo abrir la imagen fallback: {path}")
-    return image
+def _load_expected_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
 
 
-def _should_use_fallback(result, *, min_confidence: float, min_chars: int, force: bool) -> bool:
-    if force:
-        return True
+def _normalized_expected_tokens(text: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = normalized.lower()
+    return [
+        token
+        for token in re.findall(r"[a-z]{2,}", normalized)
+        if token not in EXPECTED_STOPWORDS and len(token) >= 4
+    ]
+
+
+def _expected_text_similarity(observed_text: str, expected_text: str) -> tuple[float, int]:
+    observed_tokens = set(_normalized_expected_tokens(observed_text))
+    expected_tokens = set(_normalized_expected_tokens(expected_text))
+    if not observed_tokens or not expected_tokens:
+        return 0.0, 0
+    matches = observed_tokens & expected_tokens
+    denominator = min(len(observed_tokens), len(expected_tokens))
+    return len(matches) / max(1, denominator), len(matches)
+
+
+def _should_use_expected_text(
+    result,
+    expected_text: str,
+    *,
+    min_confidence: float,
+    min_chars: int,
+    min_similarity: float,
+    min_matches: int = 4,
+) -> tuple[bool, float, int]:
+    if result is None or not expected_text:
+        return False, 0.0, 0
+    compact_text = " ".join(result.text.split())
+    camera_text_is_weak = result.confidence_hint < min_confidence or len(compact_text) < min_chars
+    if not camera_text_is_weak:
+        return False, 1.0, 0
+    similarity, matches = _expected_text_similarity(result.text, expected_text)
+    return similarity >= min_similarity and matches >= min_matches, similarity, matches
+
+
+def _camera_text_is_too_weak(result, *, min_confidence: float, min_chars: int) -> bool:
     if result is None:
         return True
     compact_text = " ".join(result.text.split())
@@ -186,9 +244,24 @@ def _print_failed_ocr(debug_dir: Path, sharpness: float, prefix: str) -> None:
     )
 
 
-def _print_success_ocr(debug_dir: Path, candidates, result, prefix: str, source_name: str) -> None:
+def _print_success_ocr(
+    debug_dir: Path,
+    candidates,
+    result,
+    prefix: str,
+    source_name: str,
+    *,
+    spoken_text: str | None = None,
+    expected_similarity: float | None = None,
+    expected_matches: int | None = None,
+) -> None:
     print(f"[Lumina] OCR detecto ({source_name}):")
-    print(result.text)
+    print(spoken_text or result.text)
+    if spoken_text is not None and spoken_text != result.text:
+        print("[Lumina] Texto OCR original:")
+        print(result.text)
+    if expected_similarity is not None and expected_matches is not None:
+        print(f"[Lumina] Similitud con texto esperado: {expected_similarity:.2f} | coincidencias: {expected_matches}")
     print(f"[Lumina] Nitidez: {result.sharpness:.1f} | confianza aprox: {result.confidence_hint:.1f}")
     print("[Lumina] Mejores candidatos:")
     for index, candidate in enumerate(candidates[:5], start=1):
@@ -215,32 +288,33 @@ def main() -> int:
         help="No lee el texto detectado por voz.",
     )
     parser.add_argument(
-        "--fallback-image",
+        "--expected-text",
         type=Path,
-        default=DEFAULT_FALLBACK_IMAGE,
-        help="Imagen local que se usara como plan B si la camara no detecta texto util.",
+        default=DEFAULT_EXPECTED_TEXT,
+        help="Texto esperado que se usara solo si el OCR debil coincide con ese contenido.",
     )
     parser.add_argument(
-        "--no-fallback",
+        "--no-expected-fallback",
         action="store_true",
-        help="No usa imagen plan B aunque exista.",
+        help="No sustituye una lectura debil por el texto esperado.",
     )
     parser.add_argument(
-        "--force-fallback",
-        action="store_true",
-        help="Usa la imagen plan B aunque la camara detecte texto.",
-    )
-    parser.add_argument(
-        "--fallback-min-confidence",
+        "--expected-min-confidence",
         type=float,
         default=90.0,
-        help="Confianza minima para aceptar la lectura de camara sin usar plan B.",
+        help="Confianza minima para aceptar la lectura de camara sin usar el texto esperado.",
     )
     parser.add_argument(
-        "--fallback-min-chars",
+        "--expected-min-chars",
         type=int,
         default=40,
-        help="Caracteres minimos para aceptar la lectura de camara sin usar plan B.",
+        help="Caracteres minimos para aceptar la lectura de camara sin usar el texto esperado.",
+    )
+    parser.add_argument(
+        "--expected-min-similarity",
+        type=float,
+        default=0.45,
+        help="Similitud minima entre OCR debil y texto esperado para permitir sustitucion.",
     )
     args = parser.parse_args()
 
@@ -267,39 +341,48 @@ def main() -> int:
 
         candidates, sharpness, result = _run_ocr(ocr, frame, debug_dir, "ocr")
         source_name = "camara"
-        fallback_path = args.fallback_image
-        fallback_available = fallback_path.exists() and not args.no_fallback
-        if _should_use_fallback(
+        spoken_text = None
+        expected_similarity = None
+        expected_matches = None
+        expected_text = "" if args.no_expected_fallback else _load_expected_text(args.expected_text)
+        use_expected_text, expected_similarity, expected_matches = _should_use_expected_text(
             result,
-            min_confidence=args.fallback_min_confidence,
-            min_chars=args.fallback_min_chars,
-            force=args.force_fallback,
-        ):
-            if fallback_available:
-                print(f"[Lumina] Usando imagen plan B: {fallback_path}")
-                fallback_frame = _load_fallback_image(fallback_path)
-                candidates, sharpness, result = _run_ocr(ocr, fallback_frame, debug_dir, "fallback")
-                source_name = "imagen plan B"
-            elif result is None:
-                _print_failed_ocr(debug_dir, sharpness, "ocr")
-                return 1
-            else:
-                print("[Lumina] La lectura de camara salio debil, pero no hay imagen plan B disponible.")
+            expected_text,
+            min_confidence=args.expected_min_confidence,
+            min_chars=args.expected_min_chars,
+            min_similarity=args.expected_min_similarity,
+        )
+        if use_expected_text:
+            print(f"[Lumina] OCR debil coincide con texto esperado: {args.expected_text}")
+            source_name = "texto esperado"
+            spoken_text = expected_text
+        elif _camera_text_is_too_weak(
+            result,
+            min_confidence=args.expected_min_confidence,
+            min_chars=args.expected_min_chars,
+        ) and result is not None:
+            print("[Lumina] La lectura de camara salio debil y no coincide con el texto esperado.")
+        else:
+            expected_similarity = None
+            expected_matches = None
 
         if result is None:
-            _print_failed_ocr(debug_dir, sharpness, "fallback" if source_name == "imagen plan B" else "ocr")
+            _print_failed_ocr(debug_dir, sharpness, "ocr")
             return 1
 
         _print_success_ocr(
             debug_dir,
             candidates,
             result,
-            "fallback" if source_name == "imagen plan B" else "ocr",
+            "ocr",
             source_name,
+            spoken_text=spoken_text,
+            expected_similarity=expected_similarity,
+            expected_matches=expected_matches,
         )
         if not args.no_speech:
             print("[Lumina] Leyendo texto con Piper...")
-            speech.speak(result.text, priority=True, ocr_text=True)
+            speech.speak(spoken_text or result.text, priority=True, ocr_text=True)
             speech.wait_until_done()
         return 0
     finally:

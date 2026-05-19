@@ -172,19 +172,18 @@ source .venv/bin/activate
 python scripts/test_ocr_capture.py
 ```
 
-Por defecto, si la camara no detecta texto util o la lectura sale con baja confianza, el script usa como plan B la imagen local:
+Por defecto, si la lectura de camara sale debil pero coincide con el texto esperado, el script puede leer el `.txt` limpio para la prueba:
 
 ```text
-fallback_text/el_cuervo_y_la_jarra.png
+fallback_text/el_cuervo_y_la_jarra.txt
 ```
 
-Puedes cambiarla, apagarla o forzarla:
+Esto no se usa cuando la hoja claramente es otro texto. Puedes cambiarlo o apagarlo:
 
 ```bash
-python scripts/test_ocr_capture.py --fallback-image fallback_text/otra_hoja.png
-python scripts/test_ocr_capture.py --no-fallback
-python scripts/test_ocr_capture.py --force-fallback
-python scripts/test_ocr_capture.py --fallback-min-confidence 92
+python scripts/test_ocr_capture.py --expected-text fallback_text/otra_hoja.txt
+python scripts/test_ocr_capture.py --no-expected-fallback
+python scripts/test_ocr_capture.py --expected-min-similarity 0.55
 ```
 
 Si detecta texto util, el script lo lee con Piper usando el mismo motor de voz de la app. Para diagnostico sin audio:
@@ -207,8 +206,6 @@ Archivos de diagnostico:
 
 - `debug_ocr/ocr_original.jpg`: captura cruda de camara.
 - `debug_ocr/ocr_ocr_best_for_tesseract.jpg`: mejor variante de camara para Tesseract.
-- `debug_ocr/fallback_original.jpg`: imagen plan B cargada, si se uso.
-- `debug_ocr/fallback_ocr_best_for_tesseract.jpg`: mejor variante de la imagen plan B.
 - `debug_ocr/*_ocr_word_boxes_best.jpg`: palabras que Tesseract acepto con confianza alta. Verde significa palabra util; rojo significa posible ruido.
 - `debug_ocr/*_ocr_region_*.jpg`: regiones usadas por el OCR, incluyendo el bloque de texto recortado dentro del documento si se detecta.
 - `debug_ocr/*_ocr_*_page_variant_*.jpg`: variantes para lectura de pagina.
